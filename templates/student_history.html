@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <h2>Attendance History for {{ student.name }}</h2>
+    <div class="student-summary">
+        <div><strong>Roll No:</strong> {{ student.roll_no }}</div>
+        <div><strong>Branch:</strong> {{ student.branch }}</div>
+        <div><strong>Semester:</strong> {{ student.semester }}</div>
+        <div><strong>Attendance %:</strong> {{ percentage }}%</div>
+    </div>
+    <table>
+        <thead><tr><th>Session</th><th>Date</th><th>Time</th><th>Status</th><th>Recorded</th></tr></thead>
+        <tbody>
+            {% for row in attendance %}
+            <tr>
+                <td>{{ row.title }}</td>
+                <td>{{ row.date }}</td>
+                <td>{{ row.time }}</td>
+                <td>{{ row.status }}</td>
+                <td>{{ row.timestamp }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

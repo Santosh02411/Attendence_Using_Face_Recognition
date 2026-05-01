@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card login-card">
+    <h2>Student Login</h2>
+    <form id="studentLoginForm">
+        <label>Roll Number</label>
+        <input id="roll_no" type="text" placeholder="Enter your roll number" required>
+        <label>Password</label>
+        <input id="password" type="password" placeholder="Enter your password" required>
+        <button type="submit">Login</button>
+    </form>
+    <div id="resultBox" class="result-box"></div>
+</div>
+
+<div id="sessionsContainer" style="display: none;">
+    <div class="card wide-card">
+        <h2>Active Attendance Sessions</h2>
+        <div id="sessionsList"></div>
+    </div>
+</div>
+
+<script>
+document.getElementById('studentLoginForm').onsubmit = function(e) {
+    e.preventDefault();
+    const rollNo = document.getElementById('roll_no').value;
+    const password = document.getElementById('password').value;
+    document.getElementById('resultBox').textContent = 'Authenticating...';
+    
+    fetch('/student/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({roll_no: rollNo, password: password})
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.status === 'ok') {
+            document.getElementById('resultBox').textContent = 'Welcome, ' + d.student.name;
+            loadActiveSessions(d.student.id);
+        } else {
+            document.getElementById('resultBox').textContent = d.message || 'Login failed. Please check your credentials.';
+            document.getElementById('sessionsContainer').style.display = 'none';
+        }
+    })
+    .catch(e => {
+        document.getElementById('resultBox').textContent = 'Error: ' + e.message;
+    });
+};
+
+function loadActiveSessions(studentId) {
+    fetch('/get-active-sessions')
+        .then(r => r.json())
+        .then(d => {
+            if (d.sessions && d.sessions.length > 0) {
+                let html = '';
+                d.sessions.forEach(session => {
+                    html += `
+                    <div class="session-card" style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;">
+                        <h3>${session.title}</h3>
+                        <p><strong>Subject:</strong> ${session.subject_name}</p>
+                        <p><strong>Date:</strong> ${session.date} at ${session.time}</p>
+                        <button class="button" onclick="attendSession(${session.id}, ${studentId})">Mark Attendance</button>
+                    </div>
+                    `;
+                });
+                document.getElementById('sessionsList').innerHTML = html;
+                document.getElementById('sessionsContainer').style.display = 'block';
+            } else {
+                document.getElementById('resultBox').textContent = 'No active sessions available.';
+                document.getElementById('sessionsContainer').style.display = 'none';
+            }
+        })
+        .catch(e => {
+            document.getElementById('resultBox').textContent = 'Error loading sessions: ' + e.message;
+        });
+}
+
+function attendSession(sessionId, studentId) {
+    window.location.href = '/student/attend?session_id=' + sessionId + '&student_id=' + studentId;
+}
+</script>
+{% endblock %}

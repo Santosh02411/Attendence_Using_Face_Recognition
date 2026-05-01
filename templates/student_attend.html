@@ -1,0 +1,213 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card" data-session-id="{{ session_info.id }}" data-student-id="{{ student.id }}">
+    <h2>Mark Attendance</h2>
+    <div class="session-info">
+        <h3>{{ session_info.title }}</h3>
+        <p><strong>Subject:</strong> {{ session_info.subject_name }} ({{ session_info.subject_code }})</p>
+        <p><strong>Date:</strong> {{ session_info.date }} at {{ session_info.time }}</p>
+        <p><strong>Student:</strong> {{ student.name }} ({{ student.roll_no }})</p>
+    </div>
+    
+    <div class="video-panel">
+        <video id="video" autoplay muted playsinline webkit-playsinline style="width: 100%; height: 400px; object-fit: cover; background: black; border-radius: 18px; transform: scaleX(-1);"></video>
+        <canvas id="captureCanvas" style="display:none"></canvas>
+        <div class="capture-controls">
+            <button id="markAttendanceBtn" class="button">Mark Attendance</button>
+        </div>
+        <div class="face-detection-tips">
+            <h4>💡 Tips for Face Detection:</h4>
+            <ul>
+                <li>Ensure good lighting on your face</li>
+                <li>Position camera at eye level</li>
+                <li>Look directly at the camera</li>
+                <li>Remove glasses if possible</li>
+                <li>Avoid strong shadows on face</li>
+                <li>Keep face centered in the frame</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div id="resultBox" class="result-box"></div>
+</div>
+
+<script>
+let stream = null;
+
+// Start camera when page loads
+window.addEventListener('load', function() {
+    startCamera();
+});
+
+function startCamera() {
+    document.getElementById('resultBox').textContent = 'Requesting camera... Make sure to click ALLOW when browser asks!';
+    document.getElementById('markAttendanceBtn').disabled = true;
+    
+    // Try to get camera with better constraints for proper orientation
+    const constraints = {
+        video: {
+            facingMode: 'user',
+            width: {ideal: 640, max: 1280},
+            height: {ideal: 480, max: 720},
+            aspectRatio: {ideal: 4/3}
+        }
+    };
+    
+    navigator.mediaDevices.getUserMedia(constraints)
+        .then(function(s) {
+            stream = s;
+            const video = document.getElementById('video');
+            video.srcObject = stream;
+            
+            // Wait for video to play and check orientation
+            video.addEventListener('loadedmetadata', function() {
+                console.log(`Video dimensions: ${video.videoWidth}x${video.videoHeight}`);
+                
+                setTimeout(function() {
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                        document.getElementById('resultBox').textContent = 'Camera is ON! Click "Mark Attendance" to capture your face.';
+                        document.getElementById('markAttendanceBtn').disabled = false;
+                    } else {
+                        document.getElementById('resultBox').textContent = 'Camera loaded but video not visible. Try refreshing.';
+                    }
+                }, 1500);
+            });
+        })
+        .catch(function(err) {
+            let msg = err.name;
+            if (err.name === 'NotAllowedError') msg = 'Camera permission DENIED. Check browser settings.';
+            if (err.name === 'NotFoundError') msg = 'No camera found on device.';
+            if (err.name === 'NotReadableError') msg = 'Camera is in use by another app.';
+            if (err.name === 'SecurityError') msg = 'Must use LOCALHOST not IP. Go to http://localhost:5000';
+            document.getElementById('resultBox').textContent = 'Camera Error: ' + msg;
+            document.getElementById('markAttendanceBtn').disabled = true;
+        });
+}
+
+document.getElementById('markAttendanceBtn').onclick = function() {
+    const video = document.getElementById('video');
+    if (!video.srcObject) {
+        document.getElementById('resultBox').textContent = 'Camera not active!';
+        return;
+    }
+    
+    const canvas = document.getElementById('captureCanvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    if (canvas.width === 0 || canvas.height === 0) {
+        document.getElementById('resultBox').textContent = 'Video not ready. Wait a moment and try again.';
+        return;
+    }
+    
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    
+    const imgData = canvas.toDataURL('image/jpeg');
+    
+    document.getElementById('markAttendanceBtn').disabled = true;
+    document.getElementById('resultBox').textContent = 'Processing face recognition...';
+    
+    const card = document.querySelector('.card.wide-card');
+    const payload = {
+        session_id: parseInt(card.dataset.sessionId),
+        student_id: parseInt(card.dataset.studentId),
+        image: imgData
+    };
+    
+    fetch('/student/attend/mark', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    })
+    .then(r => {
+        if (!r.ok) {
+            return r.text().then(text => {
+                throw new Error(`Server returned ${r.status}: ${text}`);
+            });
+        }
+        return r.json();
+    })
+    .then(d => {
+        if (d.status === 'present') {
+            document.getElementById('resultBox').textContent = '✅ ' + d.message;
+            document.getElementById('markAttendanceBtn').textContent = 'Attendance Marked';
+            document.getElementById('markAttendanceBtn').disabled = true;
+        } else if (d.status === 'already_marked') {
+            document.getElementById('resultBox').textContent = '⚠️ ' + d.message;
+            document.getElementById('markAttendanceBtn').textContent = 'Already Marked';
+            document.getElementById('markAttendanceBtn').disabled = true;
+        } else if (d.status === 'error') {
+            document.getElementById('resultBox').textContent = '❌ ' + d.message;
+            document.getElementById('markAttendanceBtn').disabled = false;
+        } else {
+            document.getElementById('resultBox').textContent = '❌ ' + d.message;
+            document.getElementById('markAttendanceBtn').disabled = false;
+        }
+    })
+    .catch(e => {
+        console.error('Error:', e);
+        document.getElementById('resultBox').textContent = '❌ Network error: ' + e.message;
+        document.getElementById('markAttendanceBtn').disabled = false;
+    });
+};
+
+// Cleanup camera when page unloads
+window.addEventListener('beforeunload', function() {
+    if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+    }
+});
+</script>
+
+<style>
+.session-info {
+    background: #f8fafc;
+    padding: 1rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+}
+
+.session-info h3 {
+    margin-top: 0;
+    color: var(--primary);
+}
+
+.session-info p {
+    margin: 0.5rem 0;
+}
+
+.capture-controls {
+    margin-top: 1rem;
+    text-align: center;
+}
+
+#markAttendanceBtn {
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+}
+
+.face-detection-tips {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+.face-detection-tips h4 {
+    margin: 0 0 0.5rem 0;
+    color: #0369a1;
+}
+
+.face-detection-tips ul {
+    margin: 0;
+    padding-left: 1.2rem;
+    color: #0c4a6e;
+}
+
+.face-detection-tips li {
+    margin-bottom: 0.3rem;
+}
+</style>
+{% endblock %}

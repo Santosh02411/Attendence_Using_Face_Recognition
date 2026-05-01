@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card" data-session-id="{{ session_info.id }}">
+    <h2>Attendance Session: {{ session_info.title }}</h2>
+    <div class="session-summary">
+        <div><strong>Subject:</strong> {{ session_info.subject_name }} ({{ session_info.subject_code }})</div>
+        <div><strong>Date:</strong> {{ session_info.date }}</div>
+        <div><strong>Time:</strong> {{ session_info.time }}</div>
+        <div><strong>Status:</strong> {{ 'Active' if session_info.active else 'Inactive' }}</div>
+    </div>
+    <div class="video-panel">
+        <video id="attendVideo" autoplay muted></video>
+        <div class="attendance-status">
+            <div id="detectedStudent">Waiting for student detection...</div>
+            <div><button id="startStream" class="button">Start Live Detection</button></div>
+        </div>
+    </div>
+</div>
+<div class="card">
+    <h3>Student Attendance List</h3>
+    <div class="attendance-summary">
+        <div class="summary-stats">
+            <span class="stat-item">Total Students: {{ students|length }}</span>
+            <span class="stat-item present-count">Present: {{ students|selectattr('status')|list|length }}</span>
+            <span class="stat-item absent-count">Absent: {{ students|rejectattr('status')|list|length }}</span>
+        </div>
+        <button id="refreshBtn" class="button small">Refresh</button>
+    </div>
+    <table id="attendanceTable">
+        <thead>
+            <tr>
+                <th>Roll No</th>
+                <th>Name</th>
+                <th>Branch</th>
+                <th>Semester</th>
+                <th>Status</th>
+                <th>Timestamp</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for student in students %}
+            <tr data-student-id="{{ student.id }}" class="student-row {{ 'present-row' if student.status == 'Present' else 'absent-row' }}">
+                <td>{{ student.roll_no }}</td>
+                <td>{{ student.name }}</td>
+                <td>{{ student.branch }}</td>
+                <td>{{ student.semester }}</td>
+                <td>
+                    <span class="status-badge {{ 'status-present' if student.status == 'Present' else 'status-absent' }}">
+                        {{ student.status if student.status else 'Not Marked' }}
+                    </span>
+                </td>
+                <td>{{ student.timestamp if student.timestamp else '-' }}</td>
+                <td>
+                    {% if not student.status %}
+                    <button class="button small override-btn" data-student-name="{{ student.name }}" data-student-id="{{ student.id }}">Mark Present</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="session-actions">
+        <form method="post" action="{{ url_for('session_override', session_id=session_info.id) }}" class="inline-form" id="overrideForm">
+            <select name="student_id" id="overrideStudentId">
+                <option value="">Select student...</option>
+                {% for student in students %}
+                <option value="{{ student.id }}">{{ student.name }} ({{ student.roll_no }})</option>
+                {% endfor %}
+            </select>
+            <select name="action">
+                <option value="present">Mark Present</option>
+                <option value="absent">Mark Absent</option>
+            </select>
+            <button type="submit" class="button secondary">Override</button>
+        </form>
+        <a class="button" href="{{ url_for('export_session', session_id=session_info.id) }}">Export CSV</a>
+    </div>
+</div>
+<script>
+    const card = document.querySelector('.card.wide-card');
+    const sessionId = parseInt(card.dataset.sessionId);
+    const video = document.getElementById('attendVideo');
+    const detectedStudent = document.getElementById('detectedStudent');
+    const startStream = document.getElementById('startStream');
+    const refreshBtn = document.getElementById('refreshBtn');
+    let stream = null;
+    let intervalId = null;
+    let autoRefreshInterval = null;
+
+    async function startLiveDetection() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            detectedStudent.textContent = 'Live detection started. Waiting for a recognized student...';
+            intervalId = setInterval(captureAndSend, 3000);
+            startStream.disabled = true;
+        } catch (error) {
+            detectedStudent.textContent = 'Unable to access webcam. Please allow camera permission.';
+        }
+    }
+
+    async function captureAndSend() {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = canvas.toDataURL('image/jpeg');
+        const response = await fetch(`/admin/session/${sessionId}/recognize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: imageData })
+        });
+        const result = await response.json();
+        if (result.status === 'present') {
+            detectedStudent.textContent = `Recognized: ${result.student.name} (${result.student.roll_no}) — Confidence ${result.confidence.toFixed(1)}`;
+        } else if (result.status === 'not_found') {
+            detectedStudent.textContent = 'Face not recognized. Please ensure the face is visible and clear.';
+        }
+    }
+
+    // Auto-refresh attendance data
+function refreshAttendanceData() {
+    fetch(`/admin/session/${sessionId}/attendance-data`)
+        .then(response => response.json())
+        .then(data => {
+            updateAttendanceTable(data.students);
+            updateSummaryStats(data.summary);
+        })
+        .catch(error => {
+            console.error('Error refreshing attendance:', error);
+        });
+}
+
+function updateAttendanceTable(students) {
+    const tbody = document.querySelector('#attendanceTable tbody');
+    tbody.innerHTML = '';
+    
+    students.forEach(student => {
+        const row = document.createElement('tr');
+        row.dataset.studentId = student.id;
+        row.className = `student-row ${student.status === 'Present' ? 'present-row' : 'absent-row'}`;
+        
+        row.innerHTML = `
+            <td>${student.roll_no}</td>
+            <td>${student.name}</td>
+            <td>${student.branch}</td>
+            <td>${student.semester}</td>
+            <td>
+                <span class="status-badge ${student.status === 'Present' ? 'status-present' : 'status-absent'}">
+                    ${student.status || 'Not Marked'}
+                </span>
+            </td>
+            <td>${student.timestamp || '-'}</td>
+            <td>
+                ${!student.status ? `<button class="button small override-btn" data-student-name="${student.name}" data-student-id="${student.id}">Mark Present</button>` : ''}
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+    
+    // Add event listeners to new override buttons
+    document.querySelectorAll('.override-btn').forEach(btn => {
+        btn.addEventListener('click', handleOverrideClick);
+    });
+}
+
+function updateSummaryStats(summary) {
+    document.querySelector('.stat-item:nth-child(1)').textContent = `Total Students: ${summary.total}`;
+    document.querySelector('.stat-item:nth-child(2)').textContent = `Present: ${summary.present}`;
+    document.querySelector('.stat-item:nth-child(3)').textContent = `Absent: ${summary.absent}`;
+}
+
+function handleOverrideClick(e) {
+    const studentId = e.target.dataset.studentId;
+    const studentName = e.target.dataset.studentName;
+    
+    if (confirm(`Mark ${studentName} as present?`)) {
+        fetch(`/admin/session/${sessionId}/override`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `student_id=${studentId}&action=present`
+        })
+        .then(response => response.text())
+        .then(() => {
+            refreshAttendanceData();
+        })
+        .catch(error => {
+            console.error('Error marking attendance:', error);
+        });
+    }
+}
+
+// Start auto-refresh when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    refreshAttendanceData();
+    autoRefreshInterval = setInterval(refreshAttendanceData, 5000); // Refresh every 5 seconds
+});
+
+// Manual refresh button
+refreshBtn.addEventListener('click', refreshAttendanceData);
+
+// Override button clicks
+document.querySelectorAll('.override-btn').forEach(btn => {
+    btn.addEventListener('click', handleOverrideClick);
+});
+
+// Cleanup intervals when page unloads
+window.addEventListener('beforeunload', function() {
+    if (intervalId) clearInterval(intervalId);
+    if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+});
+
+startStream.addEventListener('click', () => startLiveDetection());
+</script>
+
+<style>
+.attendance-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: 12px;
+}
+
+.summary-stats {
+    display: flex;
+    gap: 2rem;
+}
+
+.stat-item {
+    font-weight: 600;
+}
+
+.present-count {
+    color: #059669;
+}
+
+.absent-count {
+    color: #dc2626;
+}
+
+.student-row.present-row {
+    background: #f0fdf4;
+}
+
+.student-row.absent-row {
+    background: #fef2f2;
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.status-present {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-absent {
+    background: #fee2e2;
+    color: #991b1b;
+}
+</style>
+{% endblock %}

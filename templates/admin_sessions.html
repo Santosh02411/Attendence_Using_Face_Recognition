@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <h2>Schedule Attendance Session</h2>
+    <form method="post" class="form-grid">
+        <label>Session Title</label>
+        <input type="text" name="title" required>
+        <label>Subject Name</label>
+        <input type="text" name="subject_name" required>
+        <label>Subject Code</label>
+        <input type="text" name="subject_code" required>
+        <label>Date</label>
+        <input type="text" name="date" placeholder="dd-mm-yyyy" required pattern="\d{2}-\d{2}-\d{4}" title="Please enter date in dd-mm-yyyy format">
+        <label>Time</label>
+        <input type="text" name="time" placeholder="hh:mm" required pattern="\d{2}:\d{2}" title="Please enter time in 24-hour format (hh:mm)">
+        <div class="form-actions">
+            <button type="submit">Create Session</button>
+        </div>
+    </form>
+</div>
+<div class="card">
+    <h2>Current Sessions</h2>
+    <table>
+        <thead><tr><th>Title</th><th>Subject</th><th>Date</th><th>Time</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+            {% for item in sessions %}
+            <tr>
+                <td>{{ item.title }}</td>
+                <td>{{ item.subject_name }} ({{ item.subject_code }})</td>
+                <td>{{ item.date }}</td>
+                <td>{{ item.time }}</td>
+                <td>{{ 'Active' if item.active else 'Inactive' }}</td>
+                <td>
+                    <a class="button small" href="{{ url_for('attendance_session', session_id=item.id) }}">Open</a>
+                    {% if not item.active %}
+                    <a class="button small" href="{{ url_for('start_session', session_id=item.id) }}">Start</a>
+                    {% else %}
+                    <a class="button small warning" href="{{ url_for('stop_session', session_id=item.id) }}">Stop</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+// Auto-format date input
+document.querySelector('input[name="date"]').addEventListener('input', function(e) {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length >= 2) {
+        value = value.slice(0, 2) + '-' + value.slice(2);
+    }
+    if (value.length >= 5) {
+        value = value.slice(0, 5) + '-' + value.slice(5);
+    }
+    if (value.length > 10) {
+        value = value.slice(0, 10);
+    }
+    e.target.value = value;
+});
+
+// Auto-format time input
+document.querySelector('input[name="time"]').addEventListener('input', function(e) {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length >= 2) {
+        value = value.slice(0, 2) + ':' + value.slice(2);
+    }
+    if (value.length > 5) {
+        value = value.slice(0, 5);
+    }
+    e.target.value = value;
+});
+
+// Set default values to today's date and current time
+window.addEventListener('load', function() {
+    const today = new Date();
+    const dateStr = String(today.getDate()).padStart(2, '0') + '-' + 
+                    String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+                    today.getFullYear();
+    const timeStr = String(today.getHours()).padStart(2, '0') + ':' + 
+                    String(today.getMinutes()).padStart(2, '0');
+    
+    document.querySelector('input[name="date"]').value = dateStr;
+    document.querySelector('input[name="time"]').value = timeStr;
+});
+</script>
+{% endblock %}

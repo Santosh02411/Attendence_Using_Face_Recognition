@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.info-card {
+    text-align: center;
+}
+
+.info-card h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--muted);
+}
+
+.info-card p {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--primary);
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.status-present {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-absent {
+    background: #fee2e2;
+    color: #991b1b;
+}
+</style>
+<div class="dashboard-grid">
+    <div class="card info-card">
+        <h3>Students Registered</h3>
+        <p>{{ students }}</p>
+    </div>
+    <div class="card info-card">
+        <h3>Sessions Created</h3>
+        <p>{{ sessions }}</p>
+    </div>
+    <div class="card info-card">
+        <h3>Attendance Records</h3>
+        <p>{{ attendance }}</p>
+    </div>
+</div>
+<div class="card">
+    <h3>Recent Attendance Records (Last 20)</h3>
+    {% if attendance_records %}
+    <table>
+        <thead>
+            <tr>
+                <th>Student Name</th>
+                <th>Roll No</th>
+                <th>Subject</th>
+                <th>Session</th>
+                <th>Status</th>
+                <th>Date & Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for record in attendance_records %}
+            <tr>
+                <td>{{ record.student_name }}</td>
+                <td>{{ record.roll_no }}</td>
+                <td>{{ record.subject_name }} ({{ record.subject_code }})</td>
+                <td>{{ record.session_title }}</td>
+                <td>
+                    <span class="status-badge {{ 'status-present' if record.status == 'Present' else 'status-absent' }}">
+                        {{ record.status }}
+                    </span>
+                </td>
+                <td>{{ record.timestamp }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No attendance records found.</p>
+    {% endif %}
+</div>
+<div class="card">
+    <h3>Low Attendance Alerts ({{ threshold }}% threshold)</h3>
+    {% if low_alerts %}
+    <table>
+        <thead><tr><th>Name</th><th>Roll No</th><th>Attendance %</th></tr></thead>
+        <tbody>
+            {% for alert in low_alerts %}
+            <tr><td>{{ alert.name }}</td><td>{{ alert.roll_no }}</td><td>{{ alert.percentage }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No alerting students found.</p>
+    {% endif %}
+</div>
+{% endblock %}
