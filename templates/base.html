@@ -10,12 +10,18 @@
     <header class="topbar">
         <div class="brand">Face Attendance System</div>
         <nav>
-            {% if session.admin_user %}
-            <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
-            <a href="{{ url_for('admin_sessions') }}">Sessions</a>
-            <a href="{{ url_for('student_register') }}">Student Register</a>
+            {% if session.user_type == 'admin' %}
+            <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
+            <a href="{{ url_for('admin_sessions') }}">Manage Sessions</a>
+            <a href="{{ url_for('admin_students') }}">Manage Students</a>
+            <a href="{{ url_for('student_register') }}">Register Student</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+            {% elif session.user_type == 'student' %}
+            <a href="{{ url_for('student_login') }}">Attendance</a>
+            <a href="{{ url_for('student_history') }}">My History</a>
             <a href="{{ url_for('logout') }}">Logout</a>
             {% else %}
+            <a href="{{ url_for('home') }}">Home</a>
             <a href="{{ url_for('login') }}">Admin Login</a>
             <a href="{{ url_for('student_login') }}">Student Login</a>
             <a href="{{ url_for('student_register') }}">Student Registration</a>

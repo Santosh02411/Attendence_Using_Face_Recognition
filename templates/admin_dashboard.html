@@ -42,14 +42,18 @@
 }
 </style>
 <div class="dashboard-grid">
-    <div class="card info-card">
-        <h3>Students Registered</h3>
-        <p>{{ students }}</p>
-    </div>
-    <div class="card info-card">
-        <h3>Sessions Created</h3>
-        <p>{{ sessions }}</p>
-    </div>
+    <a href="{{ url_for('admin_students') }}" style="text-decoration: none;">
+        <div class="card info-card">
+            <h3>Students Registered</h3>
+            <p>{{ students }}</p>
+        </div>
+    </a>
+    <a href="{{ url_for('admin_sessions') }}" style="text-decoration: none;">
+        <div class="card info-card">
+            <h3>Sessions Created</h3>
+            <p>{{ sessions }}</p>
+        </div>
+    </a>
     <div class="card info-card">
         <h3>Attendance Records</h3>
         <p>{{ attendance }}</p>

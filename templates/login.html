@@ -9,5 +9,8 @@
         <input type="password" name="password" placeholder="admin123" required>
         <button type="submit">Sign In</button>
     </form>
+    <div style="margin-top: 1rem; text-align: center;">
+        <span>Are you a student? </span><a href="{{ url_for('student_login') }}" style="color: var(--primary); font-weight: 600;">Student Login</a>
+    </div>
 </div>
 {% endblock %}

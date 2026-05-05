@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="card login-card">
+<div class="card login-card" id="loginFormCard" style="{% if logged_in %}display: none;{% endif %}">
     <h2>Student Login</h2>
     <form id="studentLoginForm">
         <label>Roll Number</label>
@@ -10,16 +10,28 @@
         <button type="submit">Login</button>
     </form>
     <div id="resultBox" class="result-box"></div>
+    <div style="margin-top: 1rem; text-align: center;">
+        <span>Not registered? </span><a href="{{ url_for('student_register') }}" style="color: var(--primary); font-weight: 600;">Register here</a>
+    </div>
 </div>
 
-<div id="sessionsContainer" style="display: none;">
+<div id="sessionsContainer" style="{% if not logged_in %}display: none;{% endif %}">
     <div class="card wide-card">
         <h2>Active Attendance Sessions</h2>
+        <p id="welcomeMsg" style="margin-bottom: 1.5rem; font-weight: 600; color: var(--primary);">
+            {% if logged_in %}Welcome back, {{ session.student_name }}!{% endif %}
+        </p>
         <div id="sessionsList"></div>
     </div>
 </div>
 
 <script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% if logged_in %}
+    loadActiveSessions({{ session.student_id }});
+    {% endif %}
+});
+
 document.getElementById('studentLoginForm').onsubmit = function(e) {
     e.preventDefault();
     const rollNo = document.getElementById('roll_no').value;
@@ -35,7 +47,12 @@ document.getElementById('studentLoginForm').onsubmit = function(e) {
     .then(d => {
         if (d.status === 'ok') {
             document.getElementById('resultBox').textContent = 'Welcome, ' + d.student.name;
+            document.getElementById('welcomeMsg').textContent = 'Welcome, ' + d.student.name + '!';
+            document.getElementById('loginFormCard').style.display = 'none';
+            document.getElementById('sessionsContainer').style.display = 'block';
             loadActiveSessions(d.student.id);
+            // Refresh to update navbar
+            setTimeout(() => window.location.reload(), 1000);
         } else {
             document.getElementById('resultBox').textContent = d.message || 'Login failed. Please check your credentials.';
             document.getElementById('sessionsContainer').style.display = 'none';
@@ -57,7 +74,8 @@ function loadActiveSessions(studentId) {
                     <div class="session-card" style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;">
                         <h3>${session.title}</h3>
                         <p><strong>Subject:</strong> ${session.subject_name}</p>
-                        <p><strong>Date:</strong> ${session.date} at ${session.time}</p>
+                        <p><strong>Available:</strong> ${session.date} to ${session.end_date}</p>
+                        <p><strong>Time:</strong> ${session.time_12h} to ${session.end_time_12h} ${session.is_recurring ? '(Daily)' : ''}</p>
                         <button class="button" onclick="attendSession(${session.id}, ${studentId})">Mark Attendance</button>
                     </div>
                     `;

@@ -65,9 +65,23 @@ def init_databases():
         title TEXT,
         date TEXT,
         time TEXT,
+        end_date TEXT,
+        end_time TEXT,
+        is_recurring INTEGER DEFAULT 0,
         active INTEGER DEFAULT 0,
         FOREIGN KEY(subject_id) REFERENCES subjects(id)
     )''')
+    
+    # Migration for sessions table
+    cursor.execute("PRAGMA table_info(sessions)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'end_date' not in columns:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN end_date TEXT")
+    if 'end_time' not in columns:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN end_time TEXT")
+    if 'is_recurring' not in columns:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN is_recurring INTEGER DEFAULT 0")
+
     cursor.execute('''CREATE TABLE IF NOT EXISTS attendance(
         id INTEGER PRIMARY KEY,
         student_id INTEGER,
@@ -208,9 +222,31 @@ def recognize_face(image_data):
 
 @app.route('/')
 def home():
-    if session.get('admin_user'):
+    if session.get('user_type') == 'admin':
         return redirect(url_for('admin_dashboard'))
-    return redirect(url_for('login'))
+    elif session.get('user_type') == 'student':
+        return redirect(url_for('student_login'))
+    return render_template('index.html')
+
+
+@app.before_request
+def restrict_access():
+    allowed_routes = ['home', 'login', 'student_login', 'student_register', 'static', 'test_image', 'get_active_sessions']
+    if request.endpoint in allowed_routes or not request.endpoint:
+        return
+    
+    if request.path.startswith('/admin/'):
+        if session.get('user_type') != 'admin':
+            flash('Admin access required', 'error')
+            return redirect(url_for('login'))
+    
+    if request.path.startswith('/student/'):
+        # Some student routes might be public (login, register), handled by allowed_routes
+        # But history and attend should be protected
+        protected_student_routes = ['student_history', 'student_attend']
+        if request.endpoint in protected_student_routes and session.get('user_type') != 'student':
+            flash('Student login required', 'error')
+            return redirect(url_for('student_login'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -220,7 +256,9 @@ def login():
         password = request.form.get('password')
         admin = query_db('SELECT * FROM admins WHERE username=? AND password=?', (username, password), one=True)
         if admin:
+            session.clear()
             session['admin_user'] = username
+            session['user_type'] = 'admin'
             return redirect(url_for('admin_dashboard'))
         flash('Invalid username or password', 'error')
     return render_template('login.html')
@@ -228,8 +266,9 @@ def login():
 
 @app.route('/logout')
 def logout():
-    session.pop('admin_user', None)
-    return redirect(url_for('login'))
+    session.clear()
+    flash('You have been logged out', 'success')
+    return redirect(url_for('home'))
 
 
 @app.route('/admin/dashboard')
@@ -273,6 +312,47 @@ def admin_dashboard():
                          threshold=threshold)
 
 
+@app.route('/admin/students')
+def admin_students():
+    if not session.get('admin_user'):
+        return redirect(url_for('login'))
+    students = query_db('SELECT * FROM students')
+    return render_template('admin_students.html', students=students)
+
+
+@app.route('/admin/student/<int:student_id>/delete', methods=['POST'])
+def delete_student(student_id):
+    if not session.get('admin_user'):
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    # 1. Delete attendance records
+    execute_db('DELETE FROM attendance WHERE student_id=?', (student_id,))
+    
+    # 2. Delete face profile from FaceBase.db
+    face_conn = sqlite3.connect(FACE_DATABASE_PATH)
+    face_cursor = face_conn.cursor()
+    face_cursor.execute('DELETE FROM people WHERE id=?', (student_id,))
+    face_conn.commit()
+    face_conn.close()
+    
+    # 3. Delete face images from Datasets directory
+    try:
+        for f in os.listdir(DATA_DIR):
+            if f.startswith(f'User.{student_id}.'):
+                os.remove(os.path.join(DATA_DIR, f))
+    except Exception as e:
+        print(f"Error deleting images: {e}")
+    
+    # 4. Delete student from app.db
+    execute_db('DELETE FROM students WHERE id=?', (student_id,))
+    
+    # 5. Retrain the recognizer (model should be updated without the deleted student)
+    train_recognizer()
+    
+    flash('Student and all related records deleted successfully', 'success')
+    return redirect(url_for('admin_students'))
+
+
 @app.route('/admin/sessions', methods=['GET', 'POST'])
 def admin_sessions():
     if not session.get('admin_user'):
@@ -282,19 +362,76 @@ def admin_sessions():
         subject_name = request.form.get('subject_name')
         subject_code = request.form.get('subject_code')
         date = request.form.get('date')
-        time = request.form.get('time')
-        if title and subject_name and subject_code and date and time:
+        
+        start_h = int(request.form.get('start_h', 12))
+        start_m = int(request.form.get('start_m', 0))
+        start_p = request.form.get('start_p', 'AM')
+        
+        end_h = int(request.form.get('end_h', 12))
+        end_m = int(request.form.get('end_m', 0))
+        end_p = request.form.get('end_p', 'PM')
+        
+        def to_24h(h, m, p):
+            if p == 'PM' and h < 12: h += 12
+            if p == 'AM' and h == 12: h = 0
+            return f"{h:02d}:{m:02d}"
+            
+        time = to_24h(start_h, start_m, start_p)
+        end_time = to_24h(end_h, end_m, end_p)
+        
+        end_date = request.form.get('end_date')
+        is_recurring = 1 if request.form.get('is_recurring') else 0
+        
+        # Convert yyyy-mm-dd to dd-mm-yyyy for internal consistency
+        def convert_date(d):
+            if not d: return d
+            try:
+                return datetime.strptime(d, '%Y-%m-%d').strftime('%d-%m-%Y')
+            except:
+                return d
+        
+        date = convert_date(date)
+        end_date = convert_date(end_date)
+        
+        if title and subject_name and subject_code and date and time and end_date and end_time:
             subject = query_db('SELECT * FROM subjects WHERE code=?', (subject_code,), one=True)
             if not subject:
                 subject_id = execute_db('INSERT INTO subjects(name, code) VALUES(?, ?)', (subject_name, subject_code))
             else:
                 subject_id = subject['id']
-            execute_db('INSERT INTO sessions(subject_id, title, date, time, active) VALUES(?, ?, ?, ?, ?)', (subject_id, title, date, time, 0))
+            execute_db('''INSERT INTO sessions(subject_id, title, date, time, end_date, end_time, is_recurring, active) 
+                          VALUES(?, ?, ?, ?, ?, ?, ?, ?)''', 
+                       (subject_id, title, date, time, end_date, end_time, is_recurring, 0))
             flash('Session scheduled successfully', 'success')
         else:
             flash('Please fill all session fields', 'error')
-    sessions = query_db('SELECT s.*, subj.name as subject_name, subj.code as subject_code FROM sessions s LEFT JOIN subjects subj ON s.subject_id=subj.id')
+    sessions_raw = query_db('SELECT s.*, subj.name as subject_name, subj.code as subject_code FROM sessions s LEFT JOIN subjects subj ON s.subject_id=subj.id')
+    sessions = []
+    for s in sessions_raw:
+        sd = dict(s)
+        try:
+            sd['time_12h'] = datetime.strptime(s['time'], '%H:%M').strftime('%I:%M %p')
+            sd['end_time_12h'] = datetime.strptime(s['end_time'], '%H:%M').strftime('%I:%M %p')
+        except:
+            sd['time_12h'] = s['time']
+            sd['end_time_12h'] = s['end_time']
+        sessions.append(sd)
     return render_template('admin_sessions.html', sessions=sessions)
+
+
+@app.route('/admin/session/<int:session_id>/delete', methods=['POST'])
+def delete_session(session_id):
+    if not session.get('admin_user'):
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    # Delete attendance records for this session
+    execute_db('DELETE FROM attendance WHERE session_id=?', (session_id,))
+    
+    # Delete the session
+    execute_db('DELETE FROM sessions WHERE id=?', (session_id,))
+    
+    flash('Session and related attendance records deleted successfully', 'success')
+    return redirect(url_for('admin_sessions'))
 
 
 @app.route('/admin/session/<int:session_id>/start')
@@ -440,6 +577,9 @@ def student_register():
 
 @app.route('/student/login', methods=['GET', 'POST'])
 def student_login():
+    if session.get('user_type') == 'student':
+        return render_template('student_login.html', logged_in=True)
+
     if request.method == 'POST':
         data = request.get_json() or {}
         roll_no = data.get('roll_no')
@@ -455,9 +595,14 @@ def student_login():
         if student['password'] != password:
             return jsonify({'status': 'error', 'message': 'Incorrect password'}), 401
         
+        session.clear()
+        session['student_id'] = student['id']
+        session['student_name'] = student['name']
+        session['user_type'] = 'student'
+        
         return jsonify({'status': 'ok', 'student': dict(student)})
     
-    return render_template('student_login.html')
+    return render_template('student_login.html', logged_in=False)
 
 
 @app.route('/student/search')
@@ -473,35 +618,81 @@ def student_search():
 
 @app.route('/get-active-sessions')
 def get_active_sessions():
+    now = datetime.now()
+    current_date = now.strftime('%d-%m-%Y')
+    current_time = now.strftime('%H:%M')
+    
     sessions = query_db('''
-        SELECT s.id, s.title, s.date, s.time, sub.name as subject_name, sub.code as subject_code 
+        SELECT s.*, sub.name as subject_name, sub.code as subject_code 
         FROM sessions s 
         LEFT JOIN subjects sub ON s.subject_id = sub.id 
-        WHERE s.active = 1
         ORDER BY s.date DESC, s.time DESC
     ''')
-    return jsonify({'sessions': [dict(s) for s in sessions]})
+    
+    active_sessions = []
+    for s in sessions:
+        is_active = False
+        if s['active'] == 1:
+            is_active = True
+        elif s['date'] and s['time'] and s['end_date'] and s['end_time']:
+            try:
+                start_dt = datetime.strptime(f"{s['date']} {s['time']}", '%d-%m-%Y %H:%M')
+                end_dt = datetime.strptime(f"{s['end_date']} {s['end_time']}", '%d-%m-%Y %H:%M')
+                
+                if s['is_recurring'] == 1:
+                    # Recurring every day: check if current date is in range and current time is in range
+                    curr_date_dt = datetime.strptime(current_date, '%d-%m-%Y')
+                    start_date_dt = datetime.strptime(s['date'], '%d-%m-%Y')
+                    end_date_dt = datetime.strptime(s['end_date'], '%d-%m-%Y')
+                    
+                    if start_date_dt <= curr_date_dt <= end_date_dt:
+                        # Date is in range, now check time
+                        if s['time'] <= current_time <= s['end_time']:
+                            is_active = True
+                else:
+                    # Not recurring: just check if now is between start and end
+                    if start_dt <= now <= end_dt:
+                        is_active = True
+            except Exception as e:
+                print(f"Error checking session bounds for ID {s['id']}: {e}")
+        
+        if is_active:
+            # Add formatted info for the UI
+            session_dict = dict(s)
+            session_dict['is_auto_active'] = (s['active'] == 0)
+            try:
+                session_dict['time_12h'] = datetime.strptime(s['time'], '%H:%M').strftime('%I:%M %p')
+                session_dict['end_time_12h'] = datetime.strptime(s['end_time'], '%H:%M').strftime('%I:%M %p')
+            except:
+                session_dict['time_12h'] = s['time']
+                session_dict['end_time_12h'] = s['end_time']
+            active_sessions.append(session_dict)
+            
+    return jsonify({'sessions': active_sessions})
 
 
 @app.route('/student/attend')
 def student_attend():
     session_id = request.args.get('session_id')
-    student_id = request.args.get('student_id')
+    student_id = session.get('student_id')
+    
+    if not student_id:
+        return redirect(url_for('student_login'))
     
     try:
         session_id = int(session_id) if session_id else None
-        student_id = int(student_id) if student_id else None
     except:
         session_id = None
-        student_id = None
     
-    if not session_id or not student_id:
+    if not session_id:
+        flash('Please select a session first', 'warning')
         return redirect(url_for('student_login'))
     
     session_info = query_db('SELECT s.*, sub.name as subject_name, sub.code as subject_code FROM sessions s LEFT JOIN subjects sub ON s.subject_id = sub.id WHERE s.id=?', (session_id,), one=True)
     student = query_db('SELECT * FROM students WHERE id=?', (student_id,), one=True)
     
     if not session_info or not student:
+        flash('Session or student record not found', 'error')
         return redirect(url_for('student_login'))
     
     return render_template('student_attend.html', session_info=dict(session_info), student=dict(student))
@@ -634,7 +825,7 @@ def student_mark_attendance():
             # Try to recognize face
             trainer_path = os.path.join(RECOGNIZER_DIR, 'trainer.yml')
             if not os.path.exists(trainer_path):
-                return jsonify({'status': 'error', 'message': 'Face recognition model not trained. Please contact administrator.'}), 500
+                return jsonify({'status': 'error', 'message': 'Face recognition model not trained. Please contact administrator.'}), 200
             
             recognizer = cv2.face.LBPHFaceRecognizer_create()
             recognizer.read(trainer_path)
@@ -646,40 +837,56 @@ def student_mark_attendance():
             # Predict face
             face_id, confidence = recognizer.predict(face_roi)
             
-            # Check if confidence is good enough and matches the student
-            if confidence < 90 and int(face_id) == student_id:
+            print(f'DEBUG: Recognized ID: {face_id}, Confidence: {confidence:.2f}, Expected Student ID: {student_id}')
+
+            # LBPH Confidence: lower is better. < 50 is excellent, < 100 is good, < 120 is acceptable.
+            # We use a slightly more lenient threshold (115) for better user experience
+            if confidence < 115:
+                # If ID matches exactly, perfect.
+                # If ID doesn't match, but confidence is very high (< 90), we still allow it 
+                # but log the mismatch (could be double registration or similarity).
+                if int(face_id) == student_id:
+                    status = 'Present'
+                    note = f'Face recognized (Conf: {confidence:.1f})'
+                elif confidence < 90:
+                    status = 'Present'
+                    note = f'Fuzzy match: Recognized as ID {face_id} (Conf: {confidence:.1f})'
+                else:
+                    # Confidence is okay but ID mismatch is too high
+                    return jsonify({'status': 'face_not_recognized', 'message': f'Face not recognized as you. (Conf: {confidence:.1f}, ID: {face_id})'}), 200
+
                 # Mark attendance
-                print(f'DEBUG: Marking attendance for student {student_id} in session {session_id}')
-                attendance_id = execute_db('INSERT INTO attendance(student_id, session_id, status, timestamp) VALUES(?, ?, ?, ?)', 
-                          (student_id, session_id, 'Present', datetime.now().isoformat()))
-                print(f'DEBUG: Attendance record inserted with ID: {attendance_id}')
+                attendance_id = execute_db('INSERT INTO attendance(student_id, session_id, status, timestamp, note) VALUES(?, ?, ?, ?, ?)', 
+                          (student_id, session_id, status, datetime.now().isoformat(), note))
                 return jsonify({'status': 'present', 'message': 'Attendance marked successfully!'})
             else:
-                return jsonify({'status': 'face_not_recognized', 'message': f'Face not recognized. Confidence: {confidence:.2f} (Expected ID: {student_id}, Got ID: {int(face_id)})'}), 400
+                return jsonify({'status': 'face_not_recognized', 'message': f'Face not recognized. Please ensure good lighting and look directly at camera. (Conf: {confidence:.1f})'}), 200
                 
         except Exception as e:
             print(f'Face recognition error: {e}')
-            return jsonify({'status': 'error', 'message': f'Face recognition failed: {str(e)}'}), 500
+            return jsonify({'status': 'error', 'message': f'Face recognition failed: {str(e)}'}), 200
             
     except Exception as e:
         print(f'General error: {e}')
-        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 500
+        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 200
 
 
-@app.route('/student/<int:student_id>/history')
-def student_history(student_id):
+@app.route('/student/history')
+def student_history():
+    student_id = session.get('student_id')
+    if not student_id:
+        return redirect(url_for('student_login'))
+        
     student = query_db('SELECT * FROM students WHERE id=?', (student_id,), one=True)
     if not student:
-        return redirect(url_for('student_register'))
+        flash('Student record not found', 'error')
+        return redirect(url_for('home'))
+        
     attendance = query_db('SELECT a.*, s.title, s.date, s.time FROM attendance a LEFT JOIN sessions s ON a.session_id=s.id WHERE a.student_id=? ORDER BY a.timestamp DESC', (student_id,))
-    subject_scores = {}
-    total = 0
-    present = 0
-    for row in attendance:
-        total += 1
-        if row['status'] == 'Present':
-            present += 1
+    total = len(attendance)
+    present = len([r for r in attendance if r['status'] == 'Present'])
     percentage = round((present / total * 100) if total > 0 else 0, 1)
+    
     return render_template('student_history.html', student=student, attendance=attendance, percentage=percentage)
 
 

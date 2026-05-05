@@ -9,80 +9,141 @@
         <input type="text" name="subject_name" required>
         <label>Subject Code</label>
         <input type="text" name="subject_code" required>
-        <label>Date</label>
-        <input type="text" name="date" placeholder="dd-mm-yyyy" required pattern="\d{2}-\d{2}-\d{4}" title="Please enter date in dd-mm-yyyy format">
-        <label>Time</label>
-        <input type="text" name="time" placeholder="hh:mm" required pattern="\d{2}:\d{2}" title="Please enter time in 24-hour format (hh:mm)">
-        <div class="form-actions">
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <label>Start Date</label>
+                <input type="date" name="date" required>
+            </div>
+            <div>
+                <label>End Date</label>
+                <input type="date" name="end_date" required>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <label>Start Time (12h)</label>
+                <div style="display: flex; gap: 0.25rem;">
+                    <select name="start_h" style="padding: 0.5rem; flex: 1;">
+                        {% for i in range(1, 13) %}<option value="{{ i }}">{{ '%02d' % i }}</option>{% endfor %}
+                    </select>
+                    <select name="start_m" style="padding: 0.5rem; flex: 1;">
+                        {% for i in range(0, 60) %}<option value="{{ i }}">{{ '%02d' % i }}</option>{% endfor %}
+                    </select>
+                    <select name="start_p" style="padding: 0.5rem; flex: 1;">
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label>End Time (12h)</label>
+                <div style="display: flex; gap: 0.25rem;">
+                    <select name="end_h" style="padding: 0.5rem; flex: 1;">
+                        {% for i in range(1, 13) %}<option value="{{ i }}">{{ '%02d' % i }}</option>{% endfor %}
+                    </select>
+                    <select name="end_m" style="padding: 0.5rem; flex: 1;">
+                        {% for i in range(0, 60) %}<option value="{{ i }}">{{ '%02d' % i }}</option>{% endfor %}
+                    </select>
+                    <select name="end_p" style="padding: 0.5rem; flex: 1;">
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 1rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" name="is_recurring" style="width: auto; margin: 0;">
+                <span>Repeat every day between these dates</span>
+            </label>
+        </div>
+
+        <div class="form-actions" style="margin-top: 1rem;">
             <button type="submit">Create Session</button>
         </div>
     </form>
 </div>
 <div class="card">
     <h2>Current Sessions</h2>
-    <table>
-        <thead><tr><th>Title</th><th>Subject</th><th>Date</th><th>Time</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody>
-            {% for item in sessions %}
-            <tr>
-                <td>{{ item.title }}</td>
-                <td>{{ item.subject_name }} ({{ item.subject_code }})</td>
-                <td>{{ item.date }}</td>
-                <td>{{ item.time }}</td>
-                <td>{{ 'Active' if item.active else 'Inactive' }}</td>
-                <td>
-                    <a class="button small" href="{{ url_for('attendance_session', session_id=item.id) }}">Open</a>
-                    {% if not item.active %}
-                    <a class="button small" href="{{ url_for('start_session', session_id=item.id) }}">Start</a>
-                    {% else %}
-                    <a class="button small warning" href="{{ url_for('stop_session', session_id=item.id) }}">Stop</a>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Subject</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Repeat</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in sessions %}
+                <tr>
+                    <td>{{ item.title }}</td>
+                    <td>{{ item.subject_name }} ({{ item.subject_code }})</td>
+                    <td>{{ item.date }}<br><small>{{ item.time_12h }}</small></td>
+                    <td>{{ item.end_date }}<br><small>{{ item.end_time_12h }}</small></td>
+                    <td>{{ 'Yes' if item.is_recurring else 'No' }}</td>
+                    <td>
+                        {% if item.active %}
+                        <span class="status-badge status-present">Manual Active</span>
+                        {% else %}
+                        <span class="status-badge" style="background: #e5e7eb; color: #4b5563;">Scheduled</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <a class="button small" href="{{ url_for('attendance_session', session_id=item.id) }}">Open</a>
+                            {% if not item.active %}
+                            <a class="button small" href="{{ url_for('start_session', session_id=item.id) }}">Force Start</a>
+                            {% else %}
+                            <a class="button small warning" href="{{ url_for('stop_session', session_id=item.id) }}">Stop</a>
+                            {% endif %}
+                            <form action="{{ url_for('delete_session', session_id=item.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this session? All attendance records for this session will be lost.');">
+                                <button type="submit" class="button small warning">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <script>
-// Auto-format date input
-document.querySelector('input[name="date"]').addEventListener('input', function(e) {
-    let value = e.target.value.replace(/\D/g, '');
-    if (value.length >= 2) {
-        value = value.slice(0, 2) + '-' + value.slice(2);
-    }
-    if (value.length >= 5) {
-        value = value.slice(0, 5) + '-' + value.slice(5);
-    }
-    if (value.length > 10) {
-        value = value.slice(0, 10);
-    }
-    e.target.value = value;
-});
-
-// Auto-format time input
-document.querySelector('input[name="time"]').addEventListener('input', function(e) {
-    let value = e.target.value.replace(/\D/g, '');
-    if (value.length >= 2) {
-        value = value.slice(0, 2) + ':' + value.slice(2);
-    }
-    if (value.length > 5) {
-        value = value.slice(0, 5);
-    }
-    e.target.value = value;
-});
-
-// Set default values to today's date and current time
+// Set default values
 window.addEventListener('load', function() {
     const today = new Date();
-    const dateStr = String(today.getDate()).padStart(2, '0') + '-' + 
-                    String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-                    today.getFullYear();
-    const timeStr = String(today.getHours()).padStart(2, '0') + ':' + 
-                    String(today.getMinutes()).padStart(2, '0');
+    const dateStr = today.toISOString().split('T')[0];
     
+    // Set dates
     document.querySelector('input[name="date"]').value = dateStr;
-    document.querySelector('input[name="time"]').value = timeStr;
+    document.querySelector('input[name="end_date"]').value = dateStr;
+    
+    // Helper to set select values
+    function setTimeSelects(prefix, dateObj) {
+        let h = dateObj.getHours();
+        const m = dateObj.getMinutes();
+        const p = h >= 12 ? 'PM' : 'AM';
+        
+        h = h % 12;
+        h = h ? h : 12; // convert 0 to 12
+        
+        document.querySelector(`select[name="${prefix}_h"]`).value = h;
+        document.querySelector(`select[name="${prefix}_m"]`).value = m;
+        document.querySelector(`select[name="${prefix}_p"]`).value = p;
+    }
+    
+    setTimeSelects('start', today);
+    
+    const oneHourLater = new Date(today.getTime() + 60 * 60 * 1000);
+    setTimeSelects('end', oneHourLater);
 });
 </script>
 {% endblock %}
