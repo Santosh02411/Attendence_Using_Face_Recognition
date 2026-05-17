@@ -566,6 +566,26 @@ def student_register():
         images = data.get('images', [])
         if not name or not roll_no or not branch or not semester or not password or not images:
             return jsonify({'error': 'Missing fields'}), 400
+
+        # Check if roll_no already exists
+        existing_roll = query_db('SELECT * FROM students WHERE roll_no=?', (roll_no,), one=True)
+        if existing_roll:
+            return jsonify({'error': 'Roll number already registered'}), 400
+
+        # Check if this face already exists
+        if os.path.exists(os.path.join(RECOGNIZER_DIR, 'trainer.yml')):
+            existing_student_id = None
+            for img_data in images[:5]:  # Check the first 5 images
+                found_id, confidence = recognize_face(img_data)
+                if found_id is not None and confidence < 85: # Use a strict confidence threshold for duplicate check
+                    existing_student_id = found_id
+                    break
+            
+            if existing_student_id is not None:
+                existing_student = query_db('SELECT * FROM students WHERE id=?', (existing_student_id,), one=True)
+                if existing_student:
+                    return jsonify({'error': f'Face already registered to {existing_student["name"]} ({existing_student["roll_no"]})'}), 400
+
         student_id = execute_db('INSERT INTO students(name, roll_no, branch, semester, password) VALUES(?, ?, ?, ?, ?)', (name, roll_no, branch, semester, password))
         save_face_profile(student_id, name, gender, branch)
         saved = save_face_images(student_id, images)
