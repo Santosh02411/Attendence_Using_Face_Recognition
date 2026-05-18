@@ -4,7 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Face Recognition Attendance</title>
+    <!-- Add Google Fonts (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css">
+    
+    <script>
+        // Apply theme immediately to prevent flashing
+        const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', savedTheme);
+    </script>
 </head>
 <body>
     <header class="topbar">
@@ -26,6 +36,12 @@
             <a href="{{ url_for('student_login') }}">Student Login</a>
             <a href="{{ url_for('student_register') }}">Student Registration</a>
             {% endif %}
+            
+            <button class="theme-toggle" id="theme-toggle" aria-label="Toggle Dark Mode">
+                <svg id="theme-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                    <!-- Icon will be set by JS -->
+                </svg>
+            </button>
         </nav>
     </header>
     <main class="page-container">
@@ -40,6 +56,43 @@
         {% endwith %}
         {% block content %}{% endblock %}
     </main>
+    
+    <script>
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        
+        const moonIcon = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+        const sunIcon = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
+
+        function updateThemeIcon(theme) {
+            themeIcon.innerHTML = theme === 'dark' ? sunIcon : moonIcon;
+            if(theme === 'dark') {
+                themeIcon.setAttribute('fill', 'none');
+                themeIcon.setAttribute('stroke', 'currentColor');
+                themeIcon.setAttribute('stroke-width', '2');
+                themeIcon.setAttribute('stroke-linecap', 'round');
+                themeIcon.setAttribute('stroke-linejoin', 'round');
+            } else {
+                themeIcon.setAttribute('fill', 'none');
+                themeIcon.setAttribute('stroke', 'currentColor');
+                themeIcon.setAttribute('stroke-width', '2');
+                themeIcon.setAttribute('stroke-linecap', 'round');
+                themeIcon.setAttribute('stroke-linejoin', 'round');
+            }
+        }
+
+        // Initialize icon
+        updateThemeIcon(document.documentElement.getAttribute('data-theme'));
+
+        themeToggleBtn.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        });
+    </script>
     <script src="/static/app.js"></script>
 </body>
 </html>

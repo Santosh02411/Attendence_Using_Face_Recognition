@@ -1,34 +1,46 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card wide-card" data-session-id="{{ session_info.id }}" data-student-id="{{ student.id }}">
-    <h2>Mark Attendance</h2>
-    <div class="session-info">
-        <h3>{{ session_info.title }}</h3>
-        <p><strong>Subject:</strong> {{ session_info.subject_name }} ({{ session_info.subject_code }})</p>
-        <p><strong>Date:</strong> {{ session_info.date }} at {{ session_info.time }}</p>
-        <p><strong>Student:</strong> {{ student.name }} ({{ student.roll_no }})</p>
-    </div>
-    
-    <div class="video-panel">
-        <video id="video" autoplay muted playsinline webkit-playsinline style="width: 100%; height: 400px; object-fit: cover; background: black; border-radius: 18px; transform: scaleX(-1);"></video>
-        <canvas id="captureCanvas" style="display:none"></canvas>
-        <div class="capture-controls">
-            <button id="markAttendanceBtn" class="button">Mark Attendance</button>
+    <div class="attendance-layout">
+        <!-- Left Column: Information -->
+        <div class="attendance-info">
+            <h2>Mark Attendance</h2>
+            
+            <div class="session-info">
+                <h3>{{ session_info.title }}</h3>
+                <p><strong>Subject:</strong> {{ session_info.subject_name }} ({{ session_info.subject_code }})</p>
+                <p><strong>Date:</strong> {{ session_info.date }} at {{ session_info.time }}</p>
+                <p><strong>Student:</strong> {{ student.name }} ({{ student.roll_no }})</p>
+            </div>
+            
+            <div class="face-detection-tips">
+                <h4>💡 Tips for Face Detection:</h4>
+                <ul>
+                    <li>Ensure good lighting on your face</li>
+                    <li>Position camera at eye level</li>
+                    <li>Look directly at the camera</li>
+                    <li>Remove glasses if possible</li>
+                    <li>Avoid strong shadows on face</li>
+                    <li>Keep face centered in the dashed frame</li>
+                </ul>
+            </div>
         </div>
-        <div class="face-detection-tips">
-            <h4>💡 Tips for Face Detection:</h4>
-            <ul>
-                <li>Ensure good lighting on your face</li>
-                <li>Position camera at eye level</li>
-                <li>Look directly at the camera</li>
-                <li>Remove glasses if possible</li>
-                <li>Avoid strong shadows on face</li>
-                <li>Keep face centered in the frame</li>
-            </ul>
+        
+        <!-- Right Column: Camera & Action -->
+        <div class="attendance-camera">
+            <div class="camera-container">
+                <video id="video" autoplay muted playsinline webkit-playsinline></video>
+                <div class="camera-overlay"></div>
+            </div>
+            <canvas id="captureCanvas" style="display:none"></canvas>
+            
+            <div class="capture-controls">
+                <button id="markAttendanceBtn" class="button">Mark Attendance</button>
+            </div>
+            
+            <div id="resultBox" class="result-box"></div>
         </div>
     </div>
-    
-    <div id="resultBox" class="result-box"></div>
 </div>
 
 <script>
@@ -65,7 +77,7 @@ function startCamera() {
                 
                 setTimeout(function() {
                     if (video.videoWidth > 0 && video.videoHeight > 0) {
-                        document.getElementById('resultBox').textContent = 'Camera is ON! Click "Mark Attendance" to capture your face.';
+                        document.getElementById('resultBox').textContent = 'Camera is ON! Position your face and click Mark Attendance.';
                         document.getElementById('markAttendanceBtn').disabled = false;
                     } else {
                         document.getElementById('resultBox').textContent = 'Camera loaded but video not visible. Try refreshing.';
@@ -161,53 +173,134 @@ window.addEventListener('beforeunload', function() {
 </script>
 
 <style>
+.attendance-layout {
+    display: grid;
+    gap: 2.5rem;
+}
+
+@media (min-width: 900px) {
+    .attendance-layout {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.attendance-info h2 {
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    color: var(--text);
+}
+
 .session-info {
-    background: #f8fafc;
-    padding: 1rem;
+    background: var(--input-bg);
+    padding: 1.5rem;
     border-radius: 12px;
     margin-bottom: 1.5rem;
+    border: 1px solid var(--border);
 }
 
 .session-info h3 {
     margin-top: 0;
     color: var(--primary);
+    margin-bottom: 1rem;
 }
 
 .session-info p {
-    margin: 0.5rem 0;
+    margin: 0.6rem 0;
+    color: var(--text);
+    font-size: 1.05rem;
 }
 
-.capture-controls {
-    margin-top: 1rem;
-    text-align: center;
-}
-
-#markAttendanceBtn {
-    padding: 1rem 2rem;
-    font-size: 1.1rem;
+.session-info strong {
+    color: var(--muted);
+    font-weight: 600;
 }
 
 .face-detection-tips {
-    background: #f0f9ff;
-    border: 1px solid #bae6fd;
+    background: rgba(14, 165, 233, 0.05);
+    border: 1px solid rgba(14, 165, 233, 0.2);
     border-radius: 12px;
-    padding: 1rem;
-    margin-top: 1rem;
+    padding: 1.5rem;
+}
+
+[data-theme="dark"] .face-detection-tips {
+    background: rgba(56, 189, 248, 0.05);
+    border-color: rgba(56, 189, 248, 0.2);
 }
 
 .face-detection-tips h4 {
-    margin: 0 0 0.5rem 0;
-    color: #0369a1;
+    margin: 0 0 1rem 0;
+    color: var(--accent);
+    font-size: 1.1rem;
 }
 
 .face-detection-tips ul {
     margin: 0;
     padding-left: 1.2rem;
-    color: #0c4a6e;
+    color: var(--text);
+    line-height: 1.6;
 }
 
 .face-detection-tips li {
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.4rem;
+}
+
+.attendance-camera {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.camera-container {
+    width: 100%;
+    max-width: 450px;
+    aspect-ratio: 1 / 1;
+    border-radius: 20px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: var(--shadow-md);
+    background: #000;
+    border: 3px solid var(--border);
+    margin-bottom: 1.5rem;
+}
+
+.camera-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+}
+
+/* Face guide overlay */
+.camera-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60%;
+    height: 75%;
+    border: 2px dashed rgba(255, 255, 255, 0.6);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.capture-controls {
+    width: 100%;
+    max-width: 450px;
+}
+
+#markAttendanceBtn {
+    width: 100%;
+    padding: 1.1rem;
+    font-size: 1.15rem;
+    display: block;
+}
+
+#resultBox {
+    width: 100%;
+    max-width: 450px;
+    margin-top: 1rem;
+    text-align: center;
 }
 </style>
 {% endblock %}

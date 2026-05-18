@@ -91,9 +91,9 @@
                     <td>{{ 'Yes' if item.is_recurring else 'No' }}</td>
                     <td>
                         {% if item.active %}
-                        <span class="status-badge status-present">Manual Active</span>
+                        <span class="status-badge active">Manual Active</span>
                         {% else %}
-                        <span class="status-badge" style="background: #e5e7eb; color: #4b5563;">Scheduled</span>
+                        <span class="status-badge default">Scheduled</span>
                         {% endif %}
                     </td>
                     <td>

@@ -169,13 +169,23 @@ def save_face_images(student_id, images):
     existing_images = [name for name in os.listdir(DATA_DIR) if name.startswith(f'User.{student_id}.')]
     count = len(existing_images)
     saved = 0
+    face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
     for image_data in images:
         image = parse_base64_image(image_data)
-        image = image.convert('L')
-        count += 1
-        filename = f'User.{student_id}.{count}.jpg'
-        image.save(os.path.join(DATA_DIR, filename))
-        saved += 1
+        frame = np.array(image.convert('RGB'))
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+        if len(faces) > 0:
+            faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
+            (x, y, w, h) = faces[0]
+            face_roi = gray[y:y+h, x:x+w]
+            
+            face_img = Image.fromarray(face_roi)
+            count += 1
+            filename = f'User.{student_id}.{count}.jpg'
+            face_img.save(os.path.join(DATA_DIR, filename))
+            saved += 1
     return saved
 
 
@@ -183,6 +193,7 @@ def train_recognizer():
     image_paths = [os.path.join(DATA_DIR, f) for f in os.listdir(DATA_DIR) if f.lower().endswith('.jpg')]
     ids = []
     faces = []
+    face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
     for image_path in image_paths:
         parts = os.path.basename(image_path).split('.')
         if len(parts) < 3:
@@ -193,8 +204,18 @@ def train_recognizer():
             continue
         face_img = Image.open(image_path).convert('L')
         face_np = np.array(face_img, 'uint8')
-        ids.append(student_id)
-        faces.append(face_np)
+        
+        detected_faces = face_cascade.detectMultiScale(face_np, scaleFactor=1.1, minNeighbors=6, minSize=(100, 100))
+        if len(detected_faces) > 0:
+            detected_faces = sorted(detected_faces, key=lambda f: f[2]*f[3], reverse=True)
+            (x, y, w, h) = detected_faces[0]
+            faces.append(face_np[y:y+h, x:x+w])
+            ids.append(student_id)
+        else:
+            if face_np.shape[0] < 200 and face_np.shape[1] < 200:
+                faces.append(face_np)
+                ids.append(student_id)
+                
     if len(faces) == 0:
         return False
     recognizer = create_lbph_recognizer()
@@ -572,12 +593,26 @@ def student_register():
         if existing_roll:
             return jsonify({'error': 'Roll number already registered'}), 400
 
+        # Check if a face is actually present in the provided images
+        has_face = False
+        face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
+        for img_data in images:
+            img = parse_base64_image(img_data)
+            frame = np.array(img.convert('RGB'))
+            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+            if len(face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(100, 100))) > 0:
+                has_face = True
+                break
+                
+        if not has_face:
+            return jsonify({'error': 'No face detected in the images! Please look directly at the camera in a well-lit area.'}), 400
+
         # Check if this face already exists
         if os.path.exists(os.path.join(RECOGNIZER_DIR, 'trainer.yml')):
             existing_student_id = None
             for img_data in images[:5]:  # Check the first 5 images
                 found_id, confidence = recognize_face(img_data)
-                if found_id is not None and confidence < 85: # Use a strict confidence threshold for duplicate check
+                if found_id is not None and confidence < 95: # Use a strict confidence threshold for duplicate check
                     existing_student_id = found_id
                     break
             
@@ -818,29 +853,17 @@ def student_mark_attendance():
             print(f'Debug: Saved processed image to {debug_img_path}, shape: {gray.shape}')
             
             cascade = cv2.CascadeClassifier(CASCADE_PATH)
-            # Try multiple face detection parameters for better detection
-            faces = cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(50, 50))
+            # Use strict face detection to prevent false positives on backgrounds
+            faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(100, 100))
             print(f'Debug: First detection found {len(faces)} faces')
             
             if len(faces) == 0:
-                # Try again with different parameters
-                faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(80, 80))
+                # One fallback with slightly different scale, but still strict
+                faces = cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(80, 80))
                 print(f'Debug: Second detection found {len(faces)} faces')
             
             if len(faces) == 0:
-                # Try one more time with even more relaxed parameters
-                faces = cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=2, minSize=(30, 30))
-                print(f'Debug: Third detection found {len(faces)} faces')
-            
-            if len(faces) == 0:
-                # For testing purposes, allow manual attendance marking if face detection fails
-                # This should be removed in production
-                print('Debug: Face detection failed, implementing fallback for testing')
-                # Actually save the attendance record in the fallback
-                attendance_id = execute_db('INSERT INTO attendance(student_id, session_id, status, timestamp) VALUES(?, ?, ?, ?)', 
-                          (student_id, session_id, 'Present', datetime.now().isoformat()))
-                print(f'DEBUG: Fallback attendance record inserted with ID: {attendance_id}')
-                return jsonify({'status': 'present', 'message': 'Attendance marked successfully! (Face detection bypassed for testing)'}), 200
+                return jsonify({'status': 'error', 'message': 'No clear face detected! Please look directly at the camera in a well-lit area.'}), 200
             
             # Try to recognize face
             trainer_path = os.path.join(RECOGNIZER_DIR, 'trainer.yml')
@@ -850,7 +873,8 @@ def student_mark_attendance():
             recognizer = cv2.face.LBPHFaceRecognizer_create()
             recognizer.read(trainer_path)
             
-            # Get the first detected face
+            # Sort faces by size (area) in descending order to get the largest/closest face
+            faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
             (x, y, w, h) = faces[0]
             face_roi = gray[y:y+h, x:x+w]
             
@@ -860,27 +884,22 @@ def student_mark_attendance():
             print(f'DEBUG: Recognized ID: {face_id}, Confidence: {confidence:.2f}, Expected Student ID: {student_id}')
 
             # LBPH Confidence: lower is better. < 50 is excellent, < 100 is good, < 120 is acceptable.
-            # We use a slightly more lenient threshold (115) for better user experience
-            if confidence < 115:
-                # If ID matches exactly, perfect.
-                # If ID doesn't match, but confidence is very high (< 90), we still allow it 
-                # but log the mismatch (could be double registration or similarity).
+            # Enforce strict ID matching and a stricter confidence threshold (100)
+            if confidence < 100:
                 if int(face_id) == student_id:
                     status = 'Present'
                     note = f'Face recognized (Conf: {confidence:.1f})'
-                elif confidence < 90:
-                    status = 'Present'
-                    note = f'Fuzzy match: Recognized as ID {face_id} (Conf: {confidence:.1f})'
+                    # Mark attendance
+                    attendance_id = execute_db('INSERT INTO attendance(student_id, session_id, status, timestamp, note) VALUES(?, ?, ?, ?, ?)', 
+                              (student_id, session_id, status, datetime.now().isoformat(), note))
+                    # Return success with face match details
+                    profile = query_db('SELECT name FROM students WHERE id=?', (student_id,), one=True)
+                    match_msg = f'Face detected and matched to {profile["name"]} (Confidence score: {100 - min(confidence, 100):.1f}/100)'
+                    return jsonify({'status': 'present', 'message': match_msg, 'confidence': 100 - min(confidence, 100)})
                 else:
-                    # Confidence is okay but ID mismatch is too high
-                    return jsonify({'status': 'face_not_recognized', 'message': f'Face not recognized as you. (Conf: {confidence:.1f}, ID: {face_id})'}), 200
-
-                # Mark attendance
-                attendance_id = execute_db('INSERT INTO attendance(student_id, session_id, status, timestamp, note) VALUES(?, ?, ?, ?, ?)', 
-                          (student_id, session_id, status, datetime.now().isoformat(), note))
-                return jsonify({'status': 'present', 'message': 'Attendance marked successfully!'})
+                    return jsonify({'status': 'error', 'message': 'Face does not match your registered profile! Attendance denied.'}), 200
             else:
-                return jsonify({'status': 'face_not_recognized', 'message': f'Face not recognized. Please ensure good lighting and look directly at camera. (Conf: {confidence:.1f})'}), 200
+                return jsonify({'status': 'error', 'message': f'Face not recognized with high enough confidence (Score: {100 - min(confidence, 100):.1f}/100). Please improve lighting and try again.'}), 200
                 
         except Exception as e:
             print(f'Face recognition error: {e}')
