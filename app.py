@@ -12,8 +12,8 @@ from PIL import Image
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, 'Datasets')
 RECOGNIZER_DIR = os.path.join(BASE_DIR, 'recognizer')
-DATABASE_PATH = os.path.join(BASE_DIR, 'app.db')
-FACE_DATABASE_PATH = os.path.join(BASE_DIR, 'FaceBase.db')
+DATABASE_PATH = os.path.join(BASE_DIR, 'database', 'app.db')
+FACE_DATABASE_PATH = os.path.join(BASE_DIR, 'database', 'FaceBase.db')
 CASCADE_PATH = os.path.join(BASE_DIR, 'haarcascade_frontalface_default.xml')
 
 app = Flask(__name__)
@@ -29,6 +29,7 @@ def get_db_connection():
 def init_databases():
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(RECOGNIZER_DIR, exist_ok=True)
+    os.makedirs(os.path.join(BASE_DIR, 'database'), exist_ok=True)
 
     if not os.path.exists(CASCADE_PATH):
         if hasattr(cv2, 'data'):
