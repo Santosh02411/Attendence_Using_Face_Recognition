@@ -423,3 +423,151 @@ table tr:hover td {
     grid-template-columns: 1fr;
   }
 }
+
+.captcha-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.captcha-img {
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+/* Shared dashboard/profile card grid (admin dashboard, student profile) */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.info-card {
+  text-align: center;
+}
+.info-card h3 {
+  margin: 0 0 0.5rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.info-card p {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--primary);
+}
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.status-present {
+  background: #d1fae5;
+  color: #065f46;
+}
+.status-absent {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Simple horizontal bar meter (attendance %, etc.) */
+.meter {
+  width: 100%;
+  height: 10px;
+  border-radius: 6px;
+  background: var(--border, #e5e7eb);
+  overflow: hidden;
+  margin: 0.5rem 0;
+}
+.meter-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: var(--primary);
+  transition: width 0.3s ease;
+}
+.meter-fill.warning {
+  background: #d97706;
+}
+.meter-fill.danger {
+  background: #dc2626;
+}
+
+/* Quick-action link row (dashboards) */
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.quick-actions a.button {
+  text-decoration: none;
+}
+
+.page-header {
+  margin-bottom: 1.5rem;
+}
+.page-header h1 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.6rem;
+}
+.page-header p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.profile-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 1.5rem 0;
+}
+.profile-details div {
+  padding: 0.75rem;
+  background: var(--card-alt, rgba(0,0,0,0.03));
+  border-radius: 8px;
+}
+.profile-details strong {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.25rem;
+}
+
+/* Pagination controls (student list, audit log, attendance records) */
+.pagination-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+.pagination-summary {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.pagination-links {
+  display: flex;
+  gap: 0.5rem;
+}
+.button.small.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: default;
+}
+.search-bar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+.search-bar input[type="text"] {
+  flex: 1;
+  max-width: 320px;
+}
