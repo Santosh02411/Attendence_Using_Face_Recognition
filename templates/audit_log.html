@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% from '_pagination.html' import pagination_controls %}
+{% block content %}
+<div class="card wide-card">
+    <h2>Audit Log</h2>
+    <p style="color: var(--muted); margin-bottom: 1.5rem;">
+        Recorded actions — logins, lockouts, and admin-initiated changes
+        (deletions, overrides, account management), newest first.
+    </p>
+
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Target</th>
+                    <th>Details</th>
+                    <th>IP</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                <tr>
+                    <td>{{ entry.timestamp }}</td>
+                    <td>{{ entry.actor_type }}{% if entry.actor_name %}: {{ entry.actor_name }}{% endif %}</td>
+                    <td>{{ entry.action }}</td>
+                    <td>{{ entry.target or '' }}</td>
+                    <td>{{ entry.details or '' }}</td>
+                    <td>{{ entry.ip_address or '' }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 2rem; color: var(--muted);">No audit log entries yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {{ pagination_controls(pagination, 'audit_log_view') }}
+</div>
+{% endblock %}

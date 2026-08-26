@@ -1,46 +1,17 @@
 {% extends 'base.html' %}
 {% block content %}
-<style>
-.dashboard-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
-}
+<div class="page-header">
+    <h1>Admin Dashboard</h1>
+    <p>Signed in as {{ session.admin_user }}.</p>
+</div>
 
-.info-card {
-    text-align: center;
-}
+<div class="quick-actions">
+    <a href="{{ url_for('admin_sessions') }}" class="button small">+ New Session</a>
+    <a href="{{ url_for('student_register') }}" class="button small">+ Register Student</a>
+    <a href="{{ url_for('admin_students') }}" class="button small">Manage Students</a>
+    <a href="{{ url_for('audit_log_view') }}" class="button small">Audit Log</a>
+</div>
 
-.info-card h3 {
-    margin: 0 0 0.5rem 0;
-    color: var(--muted);
-}
-
-.info-card p {
-    font-size: 2rem;
-    font-weight: 700;
-    margin: 0;
-    color: var(--primary);
-}
-
-.status-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 12px;
-    font-size: 0.85rem;
-    font-weight: 600;
-}
-
-.status-present {
-    background: #d1fae5;
-    color: #065f46;
-}
-
-.status-absent {
-    background: #fee2e2;
-    color: #991b1b;
-}
-</style>
 <div class="dashboard-grid">
     <a href="{{ url_for('admin_students') }}" style="text-decoration: none;">
         <div class="card info-card">
@@ -54,14 +25,24 @@
             <p>{{ sessions }}</p>
         </div>
     </a>
+    <a href="{{ url_for('admin_sessions') }}" style="text-decoration: none;">
+        <div class="card info-card">
+            <h3>Active Right Now</h3>
+            <p>{{ active_sessions }}</p>
+        </div>
+    </a>
     <div class="card info-card">
         <h3>Attendance Records</h3>
         <p>{{ attendance }}</p>
     </div>
 </div>
 <div class="card">
-    <h3>Recent Attendance Records (Last 20)</h3>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>Recent Attendance Records (Last 20)</h3>
+        <a href="{{ url_for('admin_attendance_records') }}" class="button small">View All</a>
+    </div>
     {% if attendance_records %}
+    <div class="table-container" style="overflow-x: auto;">
     <table>
         <thead>
             <tr>
@@ -90,6 +71,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p>No attendance records found.</p>
     {% endif %}
@@ -97,14 +79,25 @@
 <div class="card">
     <h3>Low Attendance Alerts ({{ threshold }}% threshold)</h3>
     {% if low_alerts %}
+    <div class="table-container" style="overflow-x: auto;">
     <table>
-        <thead><tr><th>Name</th><th>Roll No</th><th>Attendance %</th></tr></thead>
+        <thead><tr><th>Name</th><th>Roll No</th><th>Attendance</th></tr></thead>
         <tbody>
             {% for alert in low_alerts %}
-            <tr><td>{{ alert.name }}</td><td>{{ alert.roll_no }}</td><td>{{ alert.percentage }}</td></tr>
+            <tr>
+                <td>{{ alert.name }}</td>
+                <td>{{ alert.roll_no }}</td>
+                <td style="min-width: 160px;">
+                    <div class="meter" title="{{ alert.percentage }}%">
+                        <div class="meter-fill {% if alert.percentage < 50 %}danger{% else %}warning{% endif %}" style="width: {{ alert.percentage }}%;"></div>
+                    </div>
+                    <span style="font-size: 0.85rem; color: var(--muted);">{{ alert.percentage }}%</span>
+                </td>
+            </tr>
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <p>No alerting students found.</p>
     {% endif %}

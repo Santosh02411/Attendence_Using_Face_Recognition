@@ -1,34 +1,21 @@
 {% extends 'base.html' %}
 {% block content %}
+<div class="page-header">
+    <h1>Add Your Face Photos</h1>
+    <p>{{ student.name }} ({{ student.roll_no }}) — currently {{ existing_count }} photo{{ 's' if existing_count != 1 }} on record.</p>
+</div>
 <div class="card wide-card">
-    <h2>Student Face Registration</h2>
-    <div class="form-grid">
-        <div class="form-panel">
-            <label>Name</label>
-            <input id="name" type="text" placeholder="Student Name" required>
-            <label>Roll No</label>
-            <input id="roll_no" type="text" placeholder="Roll No" required>
-            <label>Branch</label>
-            <input id="branch" type="text" placeholder="Branch" required>
-            <label>Semester</label>
-            <input id="semester" type="text" placeholder="Semester" required>
-            <label>Password</label>
-            <input id="password" type="password" placeholder="Set your password" required>
-            <label>Gender</label>
-            <select id="gender">
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-            </select>
-            <button id="registerButton" class="button">Register Student</button>
-        </div>
-        <div class="form-panel video-panel">
-            <video id="video" autoplay muted playsinline webkit-playsinline style="width: 100%; height: 100%; object-fit: cover; background: black;"></video>
-            <canvas id="captureCanvas" style="display:none"></canvas>
-            <div class="capture-controls">
-                <div class="capture-count">Captured <span id="capturedCount">0</span>/5</div>
-                <button id="captureButton" class="button secondary" disabled>Capture Frame</button>
-            </div>
+    <p style="color: var(--muted); margin-bottom: 1rem;">
+        Capture 5 clear photos of your face in good lighting. These are
+        needed before you can mark attendance using face recognition.
+    </p>
+    <div class="form-panel video-panel">
+        <video id="video" autoplay muted playsinline webkit-playsinline style="width: 100%; max-width: 480px; object-fit: cover; background: black;"></video>
+        <canvas id="captureCanvas" style="display:none"></canvas>
+        <div class="capture-controls">
+            <div class="capture-count">Captured <span id="capturedCount">0</span>/5</div>
+            <button id="startButton" class="button">Start Camera</button>
+            <button id="captureButton" class="button secondary" disabled>Capture Frame</button>
         </div>
     </div>
     <div id="resultBox" class="result-box"></div>
@@ -37,18 +24,7 @@
 let stream = null;
 let capturedImages = [];
 
-document.getElementById('registerButton').onclick = function() {
-    const name = document.getElementById('name').value;
-    const roll_no = document.getElementById('roll_no').value;
-    const branch = document.getElementById('branch').value;
-    const semester = document.getElementById('semester').value;
-    const password = document.getElementById('password').value;
-    
-    if (!name || !roll_no || !branch || !semester || !password) {
-        document.getElementById('resultBox').textContent = 'Fill all fields!';
-        return;
-    }
-    
+document.getElementById('startButton').onclick = function() {
     capturedImages = [];
     document.getElementById('capturedCount').textContent = '0';
     startCamera();
@@ -57,14 +33,13 @@ document.getElementById('registerButton').onclick = function() {
 function startCamera() {
     document.getElementById('resultBox').textContent = 'Requesting camera... Make sure to click ALLOW when browser asks!';
     document.getElementById('captureButton').disabled = true;
-    
+
     navigator.mediaDevices.getUserMedia({video: {facingMode: 'user', width: {ideal: 640}, height: {ideal: 480}}})
         .then(function(s) {
             stream = s;
             const video = document.getElementById('video');
             video.srcObject = stream;
-            
-            // Wait for video to play
+
             setTimeout(function() {
                 if (video.videoWidth > 0 && video.videoHeight > 0) {
                     document.getElementById('resultBox').textContent = 'Camera is ON! Click "Capture Frame" to capture.';
@@ -90,25 +65,25 @@ document.getElementById('captureButton').onclick = function() {
         uploadImages();
         return;
     }
-    
+
     const video = document.getElementById('video');
     if (!video.srcObject) {
         document.getElementById('resultBox').textContent = 'Camera not active!';
         return;
     }
-    
+
     const canvas = document.getElementById('captureCanvas');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    
+
     if (canvas.width === 0 || canvas.height === 0) {
         document.getElementById('resultBox').textContent = 'Video not ready. Wait a moment and try again.';
         return;
     }
-    
+
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0);
-    
+
     const imgData = canvas.toDataURL('image/jpeg');
     capturedImages.push(imgData);
     document.getElementById('capturedCount').textContent = capturedImages.length;
@@ -118,39 +93,23 @@ document.getElementById('captureButton').onclick = function() {
 function uploadImages() {
     document.getElementById('captureButton').disabled = true;
     document.getElementById('resultBox').textContent = 'Uploading ' + capturedImages.length + ' images...';
-    
-    const payload = {
-        name: document.getElementById('name').value,
-        roll_no: document.getElementById('roll_no').value,
-        branch: document.getElementById('branch').value,
-        semester: document.getElementById('semester').value,
-        password: document.getElementById('password').value,
-        gender: document.getElementById('gender').value,
-        images: capturedImages
-    };
-    
-    fetch('/student/register', {
+
+    fetch('/student/register-face', {
         method: 'POST',
         headers: csrfHeaders({'Content-Type': 'application/json'}),
-        body: JSON.stringify(payload)
+        body: JSON.stringify({images: capturedImages})
     })
     .then(r => r.json())
     .then(d => {
         if (d.status === 'ok') {
-            document.getElementById('resultBox').textContent = 'SUCCESS! Student ID: ' + d.student_id + '. Redirecting to login...';
+            document.getElementById('resultBox').textContent = '✅ Saved ' + d.saved + ' photo(s). Total on record: ' + d.total_photos + '. Redirecting…';
+            if (stream) { stream.getTracks().forEach(t => t.stop()); }
+            setTimeout(function() { window.location.href = '/student/profile'; }, 1800);
+        } else {
+            document.getElementById('resultBox').textContent = '❌ ' + (d.error || 'Unknown error');
+            document.getElementById('captureButton').disabled = false;
             capturedImages = [];
             document.getElementById('capturedCount').textContent = '0';
-            document.getElementById('captureButton').disabled = true;
-            if (stream) {
-                stream.getTracks().forEach(t => t.stop());
-            }
-            // Redirect to login after 2 seconds
-            setTimeout(function() {
-                window.location.href = '/student/login';
-            }, 2000);
-        } else {
-            document.getElementById('resultBox').textContent = 'Error: ' + (d.error || 'Unknown error');
-            document.getElementById('captureButton').disabled = false;
         }
     })
     .catch(e => {

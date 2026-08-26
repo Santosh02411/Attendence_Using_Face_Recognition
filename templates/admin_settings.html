@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <h2>Admin Accounts</h2>
+    <p style="color: var(--muted); margin-bottom: 1.5rem;">
+        Manage who can sign in as an administrator. The last remaining
+        admin account can't be deleted, and you can't delete the account
+        you're currently logged in as.
+    </p>
+
+    <div class="table-container" style="overflow-x: auto; margin-bottom: 2rem;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for admin in admins %}
+                <tr>
+                    <td>{{ admin.username }}{% if admin.username == session.admin_user %} (you){% endif %}</td>
+                    <td>
+                        <form action="{{ url_for('delete_admin', admin_id=admin.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete admin account &quot;' + {{ admin.username|tojson }} + '&quot;?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="button small warning">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Add a new admin account</h3>
+    <form method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Username</label>
+        <input type="text" name="new_username" required>
+        <label>Password</label>
+        <input type="password" name="new_password" required>
+        <button type="submit" class="button">Create Account</button>
+    </form>
+</div>
+
+<div class="card wide-card">
+    <h2>Change My Password</h2>
+    <p style="color: var(--muted); margin-bottom: 1.5rem;">
+        Signed in as <strong>{{ session.admin_user }}</strong>.
+    </p>
+    <form method="post" action="{{ url_for('admin_change_own_password') }}" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Current Password</label>
+        <input type="password" name="current_password" required>
+        <label>New Password</label>
+        <input type="password" name="new_password" required>
+        <label>Confirm New Password</label>
+        <input type="password" name="confirm_password" required>
+        <button type="submit" class="button">Update Password</button>
+    </form>
+</div>
+{% endblock %}

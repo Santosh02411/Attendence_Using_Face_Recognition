@@ -3,10 +3,19 @@
 <div class="card login-card">
     <h2>Admin Login</h2>
     <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>Username</label>
         <input type="text" name="username" placeholder="admin" required>
         <label>Password</label>
         <input type="password" name="password" placeholder="admin123" required>
+        {% if config.get('CAPTCHA_ENABLED', True) %}
+        <label>Enter the code shown below</label>
+        <div class="captcha-row">
+            <img src="{{ url_for('captcha_image') }}" alt="CAPTCHA" id="captchaImg" class="captcha-img">
+            <button type="button" class="button small" onclick="document.getElementById('captchaImg').src = '{{ url_for('captcha_image') }}?t=' + Date.now();">Refresh</button>
+        </div>
+        <input type="text" name="captcha" placeholder="Enter the code above" autocomplete="off" required>
+        {% endif %}
         <button type="submit">Sign In</button>
     </form>
     <div style="margin-top: 1rem; text-align: center;">

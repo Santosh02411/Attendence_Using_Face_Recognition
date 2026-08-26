@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <h1>My Profile</h1>
+    <p>Account details and attendance summary for {{ student.name }}.</p>
+</div>
+
+<div class="dashboard-grid">
+    <div class="card info-card">
+        <h3>Attendance</h3>
+        <p>{{ percentage }}%</p>
+    </div>
+    <div class="card info-card">
+        <h3>Sessions Attended</h3>
+        <p>{{ total_sessions }}</p>
+    </div>
+    <div class="card info-card">
+        <h3>Registered Face Photos</h3>
+        <p>{{ embedding_count }}</p>
+    </div>
+</div>
+
+<div class="card wide-card">
+    <h2>Account Details</h2>
+    <div class="profile-details">
+        <div><strong>Name</strong>{{ student.name }}</div>
+        <div><strong>Roll Number</strong>{{ student.roll_no }}</div>
+        <div><strong>Branch</strong>{{ student.branch }}</div>
+        <div><strong>Semester</strong>{{ student.semester }}</div>
+    </div>
+    <div class="meter" title="Attendance {{ percentage }}%">
+        <div class="meter-fill {% if percentage < 50 %}danger{% elif percentage < 75 %}warning{% endif %}" style="width: {{ percentage }}%;"></div>
+    </div>
+    <p style="color: var(--muted); font-size: 0.9rem;">
+        {% if embedding_count == 0 %}
+        No face photos on record — face-based attendance marking won't
+        work until you add some.
+        <a href="{{ url_for('student_register_face') }}">Add your face photos now</a>.
+        {% else %}
+        {{ embedding_count }} face photo{{ 's' if embedding_count != 1 }} on record from registration.
+        {% endif %}
+    </p>
+    <a href="{{ url_for('student_history') }}" class="button small">View Full Attendance History</a>
+</div>
+
+<div class="card wide-card">
+    <h2>Change My Password</h2>
+    <form method="post" action="{{ url_for('student_change_password') }}" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Current Password</label>
+        <input type="password" name="current_password" required>
+        <label>New Password</label>
+        <input type="password" name="new_password" required>
+        <label>Confirm New Password</label>
+        <input type="password" name="confirm_password" required>
+        <button type="submit" class="button">Update Password</button>
+    </form>
+</div>
+{% endblock %}

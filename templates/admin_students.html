@@ -1,11 +1,21 @@
 {% extends 'base.html' %}
+{% from '_pagination.html' import pagination_controls %}
 {% block content %}
 <div class="card wide-card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem;">
         <h2 style="margin: 0;">Manage Students</h2>
-        <a href="{{ url_for('student_register') }}" class="button small">Register New Student</a>
+        <div style="display: flex; gap: 0.5rem;">
+            <a href="{{ url_for('bulk_import_students') }}" class="button small">Bulk Import (CSV)</a>
+            <a href="{{ url_for('student_register') }}" class="button small">Register New Student</a>
+        </div>
     </div>
-    
+
+    <form method="get" class="search-bar">
+        <input type="text" name="q" placeholder="Search by name or roll number…" value="{{ search }}">
+        <button type="submit" class="button small">Search</button>
+        {% if search %}<a href="{{ url_for('admin_students') }}" class="button small">Clear</a>{% endif %}
+    </form>
+
     <div class="table-container" style="overflow-x: auto;">
         <table>
             <thead>
@@ -29,18 +39,26 @@
                     <td>{{ student.semester }}</td>
                     <td>{{ student.photo_count }}</td>
                     <td>
+                        <form action="{{ url_for('reset_student_password', student_id=student.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Reset password for this student? A new temporary password will be generated.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="button small">Reset Password</button>
+                        </form>
                         <form action="{{ url_for('delete_student', student_id=student.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this student? All attendance records and face data will be permanently removed.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="button small warning">Delete</button>
                         </form>
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted);">No students registered yet.</td>
+                    <td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted);">
+                        {% if search %}No students match "{{ search }}".{% else %}No students registered yet.{% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    {{ pagination_controls(pagination, 'admin_students', {'q': search} if search else {}) }}
 </div>
 {% endblock %}

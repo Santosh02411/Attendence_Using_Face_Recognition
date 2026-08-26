@@ -1,13 +1,20 @@
 {% extends 'base.html' %}
 {% block content %}
+<div class="page-header">
+    <h1>Attendance History</h1>
+    <p>{{ student.name }} ({{ student.roll_no }})</p>
+</div>
 <div class="card wide-card">
-    <h2>Attendance History for {{ student.name }}</h2>
-    <div class="student-summary">
-        <div><strong>Roll No:</strong> {{ student.roll_no }}</div>
-        <div><strong>Branch:</strong> {{ student.branch }}</div>
-        <div><strong>Semester:</strong> {{ student.semester }}</div>
-        <div><strong>Attendance %:</strong> {{ percentage }}%</div>
+    <div class="profile-details">
+        <div><strong>Roll No</strong>{{ student.roll_no }}</div>
+        <div><strong>Branch</strong>{{ student.branch }}</div>
+        <div><strong>Semester</strong>{{ student.semester }}</div>
+        <div><strong>Attendance</strong>{{ percentage }}%</div>
     </div>
+    <div class="meter" title="{{ percentage }}%">
+        <div class="meter-fill {% if percentage < 50 %}danger{% elif percentage < 75 %}warning{% endif %}" style="width: {{ percentage }}%;"></div>
+    </div>
+    <div class="table-container" style="overflow-x: auto; margin-top: 1.5rem;">
     <table>
         <thead><tr><th>Session</th><th>Date</th><th>Time</th><th>Status</th><th>Recorded</th></tr></thead>
         <tbody>
@@ -16,11 +23,14 @@
                 <td>{{ row.title }}</td>
                 <td>{{ row.date }}</td>
                 <td>{{ row.time }}</td>
-                <td>{{ row.status }}</td>
+                <td><span class="status-badge {{ 'status-present' if row.status == 'Present' else 'status-absent' }}">{{ row.status }}</span></td>
                 <td>{{ row.timestamp }}</td>
             </tr>
+            {% else %}
+            <tr><td colspan="5" style="text-align: center; color: var(--muted);">No attendance records yet.</td></tr>
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endblock %}

@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% from '_pagination.html' import pagination_controls %}
+{% block content %}
+<div class="page-header">
+    <h1>All Attendance Records</h1>
+    <p>Every recorded attendance entry, newest first.</p>
+</div>
+<div class="card wide-card">
+    <div class="table-container" style="overflow-x: auto;">
+    <table>
+        <thead>
+            <tr>
+                <th>Student Name</th>
+                <th>Roll No</th>
+                <th>Subject</th>
+                <th>Session</th>
+                <th>Status</th>
+                <th>Date & Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for record in records %}
+            <tr>
+                <td>{{ record.student_name }}</td>
+                <td>{{ record.roll_no }}</td>
+                <td>{{ record.subject_name }} ({{ record.subject_code }})</td>
+                <td>{{ record.session_title }}</td>
+                <td>
+                    <span class="status-badge {{ 'status-present' if record.status == 'Present' else 'status-absent' }}">
+                        {{ record.status }}
+                    </span>
+                </td>
+                <td>{{ record.timestamp }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" style="text-align: center; padding: 2rem; color: var(--muted);">No attendance records found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {{ pagination_controls(pagination, 'admin_attendance_records') }}
+</div>
+{% endblock %}

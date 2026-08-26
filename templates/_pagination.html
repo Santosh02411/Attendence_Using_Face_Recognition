@@ -1,0 +1,21 @@
+{% macro pagination_controls(pagination, endpoint, extra_args={}) %}
+{% if pagination.total_pages > 1 %}
+<div class="pagination-controls">
+    <span class="pagination-summary">
+        Page {{ pagination.page }} of {{ pagination.total_pages }} ({{ pagination.total_count }} total)
+    </span>
+    <div class="pagination-links">
+        {% if pagination.has_prev %}
+        <a class="button small" href="{{ url_for(endpoint, page=pagination.page - 1, **extra_args) }}">&laquo; Previous</a>
+        {% else %}
+        <span class="button small disabled">&laquo; Previous</span>
+        {% endif %}
+        {% if pagination.has_next %}
+        <a class="button small" href="{{ url_for(endpoint, page=pagination.page + 1, **extra_args) }}">Next &raquo;</a>
+        {% else %}
+        <span class="button small disabled">Next &raquo;</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endmacro %}

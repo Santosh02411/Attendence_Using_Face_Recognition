@@ -111,57 +111,88 @@ document.getElementById('markAttendanceBtn').onclick = function() {
         document.getElementById('resultBox').textContent = 'Video not ready. Wait a moment and try again.';
         return;
     }
-    
+
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
-    
-    const imgData = canvas.toDataURL('image/jpeg');
-    
+
+    function captureFrame() {
+        ctx.drawImage(video, 0, 0);
+        return canvas.toDataURL('image/jpeg');
+    }
+
     document.getElementById('markAttendanceBtn').disabled = true;
-    document.getElementById('resultBox').textContent = 'Processing face recognition...';
-    
-    const card = document.querySelector('.card.wide-card');
-    const payload = {
-        session_id: parseInt(card.dataset.sessionId),
-        student_id: parseInt(card.dataset.studentId),
-        image: imgData
-    };
-    
-    fetch('/student/attend/mark', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload)
-    })
-    .then(r => {
-        if (!r.ok) {
-            return r.text().then(text => {
-                throw new Error(`Server returned ${r.status}: ${text}`);
-            });
-        }
-        return r.json();
-    })
-    .then(d => {
-        if (d.status === 'present') {
-            document.getElementById('resultBox').textContent = '✅ ' + d.message;
-            document.getElementById('markAttendanceBtn').textContent = 'Attendance Marked';
-            document.getElementById('markAttendanceBtn').disabled = true;
-        } else if (d.status === 'already_marked') {
-            document.getElementById('resultBox').textContent = '⚠️ ' + d.message;
-            document.getElementById('markAttendanceBtn').textContent = 'Already Marked';
-            document.getElementById('markAttendanceBtn').disabled = true;
-        } else if (d.status === 'error') {
-            document.getElementById('resultBox').textContent = '❌ ' + d.message;
-            document.getElementById('markAttendanceBtn').disabled = false;
+
+    // Capture a short burst of frames spread over ~1.6s from the live
+    // video feed. The server uses this burst for a two-signal liveness
+    // check (see check_liveness_sequence() in app.py): pixel motion
+    // between frames, plus a detectable blink (eyes visible -> not
+    // visible -> visible again) — a live person naturally blinks, a
+    // static photo or screen generally can't.
+    const FRAME_COUNT = 5;
+    const FRAME_GAP_MS = 350;
+    const frames = [];
+
+    function captureNext(i) {
+        frames.push(captureFrame());
+        if (i === Math.floor(FRAME_COUNT / 2)) {
+            document.getElementById('resultBox').textContent = '👁️ Please blink naturally…';
         } else {
-            document.getElementById('resultBox').textContent = '❌ ' + d.message;
-            document.getElementById('markAttendanceBtn').disabled = false;
+            document.getElementById('resultBox').textContent = 'Hold still…';
         }
-    })
-    .catch(e => {
-        console.error('Error:', e);
-        document.getElementById('resultBox').textContent = '❌ Network error: ' + e.message;
-        document.getElementById('markAttendanceBtn').disabled = false;
-    });
+        if (frames.length < FRAME_COUNT) {
+            setTimeout(() => captureNext(i + 1), FRAME_GAP_MS);
+        } else {
+            submitFrames();
+        }
+    }
+
+    function submitFrames() {
+        document.getElementById('resultBox').textContent = 'Processing face recognition...';
+
+        const card = document.querySelector('.card.wide-card');
+        const payload = {
+            session_id: parseInt(card.dataset.sessionId),
+            student_id: parseInt(card.dataset.studentId),
+            images: frames
+        };
+
+        fetch('/student/attend/mark', {
+            method: 'POST',
+            headers: csrfHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify(payload)
+        })
+        .then(r => {
+            if (!r.ok) {
+                return r.text().then(text => {
+                    throw new Error(`Server returned ${r.status}: ${text}`);
+                });
+            }
+            return r.json();
+        })
+        .then(d => {
+            if (d.status === 'present') {
+                document.getElementById('resultBox').textContent = '✅ ' + d.message;
+                document.getElementById('markAttendanceBtn').textContent = 'Attendance Marked';
+                document.getElementById('markAttendanceBtn').disabled = true;
+            } else if (d.status === 'already_marked') {
+                document.getElementById('resultBox').textContent = '⚠️ ' + d.message;
+                document.getElementById('markAttendanceBtn').textContent = 'Already Marked';
+                document.getElementById('markAttendanceBtn').disabled = true;
+            } else if (d.status === 'error') {
+                document.getElementById('resultBox').textContent = '❌ ' + d.message;
+                document.getElementById('markAttendanceBtn').disabled = false;
+            } else {
+                document.getElementById('resultBox').textContent = '❌ ' + d.message;
+                document.getElementById('markAttendanceBtn').disabled = false;
+            }
+        })
+        .catch(e => {
+            console.error('Error:', e);
+            document.getElementById('resultBox').textContent = '❌ Network error: ' + e.message;
+            document.getElementById('markAttendanceBtn').disabled = false;
+        });
+    }
+
+    captureNext(0);
 };
 
 // Cleanup camera when page unloads

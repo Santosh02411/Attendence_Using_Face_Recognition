@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <h1>Bulk Import Students</h1>
+    <p>Upload a CSV to create many student accounts at once. Face photos
+       aren't part of this — each student adds their own after logging in.</p>
+</div>
+
+{% if not results %}
+<div class="card wide-card">
+    <p style="color: var(--muted);">
+        Required columns: <code>name</code>, <code>roll_no</code>,
+        <code>branch</code>, <code>semester</code>. Optional:
+        <code>password</code> — if left blank, a random temporary password
+        is generated and shown after import (share it with the student
+        securely; it won't be shown again).
+    </p>
+    <p><a href="{{ url_for('bulk_import_template') }}">Download a CSV template</a></p>
+    <form method="post" enctype="multipart/form-data" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>CSV File</label>
+        <input type="file" name="csv_file" accept=".csv" required>
+        <button type="submit" class="button">Import</button>
+    </form>
+</div>
+{% else %}
+<div class="card wide-card">
+    <h2>Import Results</h2>
+    <p><strong>{{ results.created|length }}</strong> account(s) created,
+       <strong>{{ results.skipped|length }}</strong> row(s) skipped.</p>
+
+    {% if results.created %}
+    <h3>Created</h3>
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>Name</th><th>Roll No</th><th>Temporary Password</th></tr></thead>
+            <tbody>
+                {% for row in results.created %}
+                <tr>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.roll_no }}</td>
+                    <td>{% if row.password %}<code>{{ row.password }}</code>{% else %}(as provided in CSV){% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p style="color: var(--muted); font-size: 0.9rem;">
+        Generated passwords are shown only this once — copy them now if you need to share them.
+    </p>
+    {% endif %}
+
+    {% if results.skipped %}
+    <h3>Skipped</h3>
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>CSV Row</th><th>Roll No</th><th>Reason</th></tr></thead>
+            <tbody>
+                {% for row in results.skipped %}
+                <tr><td>{{ row.row }}</td><td>{{ row.roll_no }}</td><td>{{ row.reason }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="quick-actions" style="margin-top: 1.5rem;">
+        <a href="{{ url_for('bulk_import_students') }}" class="button small">Import Another File</a>
+        <a href="{{ url_for('admin_students') }}" class="button small">Back to Students</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

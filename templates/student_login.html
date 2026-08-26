@@ -7,6 +7,14 @@
         <input id="roll_no" type="text" placeholder="Enter your roll number" required>
         <label>Password</label>
         <input id="password" type="password" placeholder="Enter your password" required>
+        {% if config.get('CAPTCHA_ENABLED', True) %}
+        <label>Enter the code shown below</label>
+        <div class="captcha-row">
+            <img src="{{ url_for('captcha_image') }}" alt="CAPTCHA" id="captchaImg" class="captcha-img">
+            <button type="button" class="button small" onclick="document.getElementById('captchaImg').src = '{{ url_for('captcha_image') }}?t=' + Date.now();">Refresh</button>
+        </div>
+        <input id="captcha" type="text" placeholder="Enter the code above" autocomplete="off" required>
+        {% endif %}
         <button type="submit">Login</button>
     </form>
     <div id="resultBox" class="result-box"></div>
@@ -36,12 +44,14 @@ document.getElementById('studentLoginForm').onsubmit = function(e) {
     e.preventDefault();
     const rollNo = document.getElementById('roll_no').value;
     const password = document.getElementById('password').value;
+    const captchaEl = document.getElementById('captcha');
+    const captcha = captchaEl ? captchaEl.value : undefined;
     document.getElementById('resultBox').textContent = 'Authenticating...';
     
     fetch('/student/login', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({roll_no: rollNo, password: password})
+        headers: csrfHeaders({'Content-Type': 'application/json'}),
+        body: JSON.stringify({roll_no: rollNo, password: password, captcha: captcha})
     })
     .then(r => r.json())
     .then(d => {
@@ -56,6 +66,10 @@ document.getElementById('studentLoginForm').onsubmit = function(e) {
         } else {
             document.getElementById('resultBox').textContent = d.message || 'Login failed. Please check your credentials.';
             document.getElementById('sessionsContainer').style.display = 'none';
+            if (captchaEl) {
+                document.getElementById('captchaImg').src = '{{ url_for("captcha_image") }}?t=' + Date.now();
+                captchaEl.value = '';
+            }
         }
     })
     .catch(e => {
