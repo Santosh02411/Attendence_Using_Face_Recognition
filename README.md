@@ -1,4 +1,4 @@
-# Attendance Using Face Recognition
+# Attendance Using Face Recognitionnnnn
 
 A comprehensive attendance management system powered by face recognition technology. This web application provides an automated, secure, and efficient way to track student attendance using facial recognition algorithms.
 
@@ -31,28 +31,32 @@ A comprehensive attendance management system powered by face recognition technol
 ## 🚀 Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/your-username/Attendance_Using_Face_Recognition.git
    cd Attendance_Using_Face_Recognition
    ```
 
 2. **Create and activate virtual environment**
+
    ```bash
    python -m venv venv
-   
+
    # On Windows
    venv\Scripts\activate
-   
+
    # On macOS/Linux
    source venv/bin/activate
    ```
 
 3. **Install required dependencies**
+
    ```bash
    pip install -r requirements.txt
    ```
 
 4. **Run the application**
+
    ```bash
    python app.py
    ```
@@ -95,23 +99,27 @@ Attendance_Using_Face_Recognition/
 ## 🎯 How It Works
 
 ### 1. Student Registration
+
 - Students register with their details (name, roll number, branch, semester)
 - Multiple face images are captured for training
 - Face profiles are stored in the database
 - Recognition model is automatically trained
 
 ### 2. Admin Session Management
+
 - Admins create attendance sessions for specific subjects
 - Sessions can be scheduled with date and time
 - Sessions can be activated/deactivated as needed
 
 ### 3. Attendance Marking
+
 - **Admin Mode**: Live face recognition during active sessions
 - **Student Mode**: Self-service attendance marking with face verification
 - Real-time face detection and recognition
 - Automatic attendance recording with timestamps
 
 ### 4. Face Recognition Process
+
 - Uses LBPH (Local Binary Patterns Histograms) algorithm
 - Haar cascade for face detection
 - Confidence threshold for recognition accuracy
@@ -120,12 +128,16 @@ Attendance_Using_Face_Recognition/
 ## 🔧 Configuration
 
 ### Database Setup
+
 The application automatically creates and initializes SQLite databases:
+
 - `app.db`: Main application data (students, sessions, attendance)
 - `FaceBase.db`: Face recognition profiles
 
 ### Face Recognition Settings
+
 Key parameters in `app.py`:
+
 - **Confidence Threshold**: 120 (adjustable based on accuracy needs)
 - **Face Detection Parameters**: scaleFactor=1.2, minNeighbors=5
 - **Minimum Face Size**: 100x100 pixels
@@ -133,6 +145,7 @@ Key parameters in `app.py`:
 ## 📊 Database Schema
 
 ### Main Tables
+
 - **admins**: Administrator credentials
 - **students**: Student information and credentials
 - **subjects**: Subject/course information
@@ -140,11 +153,13 @@ Key parameters in `app.py`:
 - **attendance**: Attendance records with timestamps
 
 ### Face Recognition Tables
+
 - **people**: Face profile information linked to student IDs
 
 ## 🎨 User Interface
 
 ### Admin Features
+
 - Dashboard with attendance statistics
 - Student management
 - Session creation and management
@@ -153,6 +168,7 @@ Key parameters in `app.py`:
 - Low attendance alerts
 
 ### Student Features
+
 - Self-registration with face capture
 - Login with credentials
 - View attendance history
@@ -192,7 +208,9 @@ Key parameters in `app.py`:
    - Check if `haarcascade_frontalface_default.xml` exists
 
 ### Debug Mode
+
 The application includes debug features:
+
 - Debug images saved as `debug_face.jpg`
 - Console output for face detection results
 - Confidence scores displayed in logs
@@ -200,18 +218,21 @@ The application includes debug features:
 ## 🔄 Advanced Usage
 
 ### Training the Recognition Model
+
 ```bash
 # Run the trainer script
 python Trainer.py
 ```
 
 ### Face Detection Testing
+
 ```bash
 # Test face detection with camera
 python Detector.py
 ```
 
 ### Creating Custom Datasets
+
 ```bash
 # Create datasets for new students
 python Dataset_Creator.py
@@ -248,7 +269,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 👥 Authors
 
-- **Santosh** - *Initial development* - [YourGitHubUsername](https://github.com/your-username)
+- **Santosh** - _Initial development_ - [YourGitHubUsername](https://github.com/your-username)
 
 ## 🙏 Acknowledgments
 
@@ -260,6 +281,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## 📞 Support
 
 For support and queries:
+
 - Create an issue in the GitHub repository
 - Email: your-email@example.com
 - Documentation: [Link to documentation]
