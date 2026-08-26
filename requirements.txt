@@ -1,4 +1,13 @@
 Flask>=2.0
-opencv-contrib-python>=4.13.0
+Flask-WTF>=1.2
+Flask-Limiter>=3.5
+python-dotenv>=1.0
+# Upper-bounded below 5.0: OpenCV 5.x removed the Torch/Caffe importers
+# (cv2.dnn.readNetFromTorch), which get_embedder() in app.py depends on to
+# load models/openface_nn4.small2.v1.t7. An unbounded ">=4.13.0" silently
+# resolves to 5.x on a fresh install and breaks face recognition (and the
+# embedding tests) at runtime with no code change on our side. Revisit this
+# pin if/when the embedder is ported to an ONNX equivalent.
+opencv-contrib-python>=4.13.0,<5.0
 numpy>=1.24
 Pillow>=9.0

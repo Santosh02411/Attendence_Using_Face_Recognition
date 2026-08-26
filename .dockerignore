@@ -1,0 +1,37 @@
+# Version control / CI
+.git
+.github
+
+# Runtime data — provided via volumes at container run time, not baked
+# into the image (see docker-compose.yml)
+database/
+Datasets/
+debug_face.jpg
+test_capture.jpg
+
+# Secrets — pass real values via `docker run --env-file` / compose
+# `env_file:`, never bake them into the image
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+venv/
+.venv/
+*.egg-info/
+
+# Tests (not needed at runtime; CI runs them directly from the repo, not
+# inside the built image)
+tests/
+requirements-dev.txt
+
+# Editor/OS cruft
+.vscode/
+.idea/
+.DS_Store
+
+# Docs/reference material not needed inside the image
+archive/
+Attendance Posting Using Face Recognition.pdf

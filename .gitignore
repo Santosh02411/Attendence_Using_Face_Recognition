@@ -1,0 +1,26 @@
+# Databases (contain student names, roll numbers, password hashes)
+database/
+*.db
+
+# Face image datasets (student photos)
+Datasets/
+
+# Debug/capture artifacts written at runtime
+debug_face.jpg
+test_capture.jpg
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+.pytest_cache/
+
+# Local environment overrides (secrets) — copy .env.example instead
+.env
+
+# Editor/OS cruft
+.vscode/
+.idea/
+.DS_Store

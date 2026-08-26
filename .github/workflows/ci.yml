@@ -1,0 +1,78 @@
+name: CI
+
+# Runs the pytest suite on every push and every pull request so a broken
+# test can never land on main (or any branch) unnoticed.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+  workflow_dispatch: {}
+
+# Cancel superseded runs on the same branch/PR to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 matches the README's stated minimum; 3.12 is the current
+        # default Ubuntu runner Python. Both are exercised so a
+        # version-specific regression can't slip through on just one.
+        python-version: ['3.9', '3.12']
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # opencv-contrib-python's wheel is self-contained on Linux, but it
+      # still links against a couple of system shared libraries that the
+      # slim GitHub-hosted image doesn't ship with (headless environments
+      # normally have no X11/GL at all). Installing them keeps `import cv2`
+      # from failing at collection time.
+      - name: Install OpenCV runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1 \
+            libglib2.0-0
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run test suite
+        env:
+          # Keep tests deterministic/hermetic and independent of any
+          # developer's local .env — conftest.py already points the DB
+          # and Datasets paths at a temp dir per test, this just makes
+          # sure no stray secret/env leaks in from the runner.
+          FLASK_SECRET_KEY: ci-test-secret-key-not-for-production
+          RATE_LIMIT_ENABLED: '0'
+          CAPTCHA_ENABLED: '0'
+        run: |
+          pytest --maxfail=1 -ra
+
+      - name: Upload pytest log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log-py${{ matrix.python-version }}
+          path: |
+            .pytest_cache
+          retention-days: 7
