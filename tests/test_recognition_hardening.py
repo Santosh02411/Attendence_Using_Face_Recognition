@@ -2,7 +2,6 @@
 image quality assessment, face alignment, and blink-transition logic —
 each in isolation from the full attendance-marking flow."""
 import numpy as np
-import pytest
 
 import app as app_module
 import config as cfg

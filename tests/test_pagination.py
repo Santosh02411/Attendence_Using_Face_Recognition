@@ -1,11 +1,11 @@
 """Tests for pagination: student list, attendance records, and audit log."""
 import sqlite3
 
+from conftest import login_as_admin
 from werkzeug.security import generate_password_hash
 
 import app as app_module
 import config as cfg
-from conftest import login_as_admin
 
 
 def _seed_students(db_path, count):

@@ -3,7 +3,6 @@ basic SQL-injection resistance. Uses client_with_csrf (CSRF protection
 left ON) unlike most other test modules."""
 import re
 
-import app as app_module
 import config as cfg
 
 
@@ -72,3 +71,22 @@ class TestSQLInjectionResistance:
         # break out of the query — parameterized queries are used
         # throughout app.py, so this must come back as not-found.
         assert resp.status_code == 404
+
+
+class TestSecurityHeaders:
+    def test_response_carries_baseline_security_headers(self, client):
+        resp = client.get('/login')
+        assert resp.headers['X-Content-Type-Options'] == 'nosniff'
+        assert resp.headers['X-Frame-Options'] == 'DENY'
+        assert resp.headers['Referrer-Policy'] == 'same-origin'
+
+    def test_session_cookie_is_httponly_and_samesite_lax(self, client):
+        # A fresh login always issues a session cookie (used to store
+        # admin_user afterwards), so check it directly rather than
+        # falling back to some other response's Set-Cookie.
+        login_resp = client.post('/login', data={
+            'username': 'admin', 'password': cfg.DEFAULT_ADMIN_PASSWORD,
+        })
+        set_cookie = login_resp.headers.get('Set-Cookie', '')
+        assert 'HttpOnly' in set_cookie
+        assert 'SameSite=Lax' in set_cookie

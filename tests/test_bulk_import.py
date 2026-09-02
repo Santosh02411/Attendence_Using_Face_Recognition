@@ -2,9 +2,8 @@
 import io
 import sqlite3
 
-from werkzeug.security import check_password_hash
-
 from conftest import login_as_admin
+from werkzeug.security import check_password_hash
 
 
 def _csv_bytes(content):
@@ -100,7 +99,7 @@ class TestBulkImportProcessing:
     def test_weak_provided_password_is_skipped(self, client, isolated_paths):
         login_as_admin(client)
         csv_content = 'name,roll_no,branch,semester,password\nA,21CS001,CSE,5,weak\n'
-        resp = client.post('/admin/students/bulk-import', data=_csv_bytes(csv_content), content_type='multipart/form-data')
+        client.post('/admin/students/bulk-import', data=_csv_bytes(csv_content), content_type='multipart/form-data')
         conn = sqlite3.connect(isolated_paths['database_path'])
         count = conn.execute("SELECT COUNT(*) FROM students WHERE roll_no='21CS001'").fetchone()[0]
         conn.close()
@@ -164,10 +163,12 @@ class TestSelfServiceFaceRegistration:
 
     def test_adding_photos_updates_embedding_count_and_photo_count(self, client, isolated_paths):
         import base64
+        from unittest.mock import patch
+
+        import cv2
         import numpy as np
         from PIL import Image
-        from unittest.mock import patch
-        import cv2
+
         import app as app_module
 
         self._seed_student(isolated_paths['database_path'])

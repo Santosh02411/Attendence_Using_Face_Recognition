@@ -1,9 +1,10 @@
 """Tests for session time-conflict detection."""
 import sqlite3
 
+from conftest import login_as_admin
+
 import app as app_module
 import config as cfg
-from conftest import login_as_admin
 
 
 def _seed_subject_and_session(db_path, date='15-08-2026', time='10:00', end_time='11:00', end_date=None):

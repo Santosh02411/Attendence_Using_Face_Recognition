@@ -2,9 +2,9 @@
 which is covered in test_rate_limiting.py)."""
 import sqlite3
 
-import app as app_module
-import config as cfg
 from conftest import login_as_admin, login_as_student
+
+import config as cfg
 
 
 class TestAdminLockout:

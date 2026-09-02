@@ -2,9 +2,10 @@
 This is separate from (and complementary to) account lockout, tested in
 test_lockout.py — rate limiting throttles by IP regardless of which
 account is targeted."""
+from conftest import login_as_admin, login_as_student
+
 import app as app_module
 import config as cfg
-from conftest import login_as_admin, login_as_student
 
 
 class TestAdminLoginRateLimiting:

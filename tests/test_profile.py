@@ -2,9 +2,8 @@
 (both student and admin)."""
 import sqlite3
 
-from werkzeug.security import check_password_hash
-
 from conftest import login_as_admin
+from werkzeug.security import check_password_hash
 
 
 def _seed_student(db_path, password='OldPass123'):
@@ -46,8 +45,9 @@ class TestStudentProfilePage:
         assert b'0%' in resp.data or b'0.0%' in resp.data
 
     def test_shows_embedding_count(self, client, isolated_paths):
-        import app as app_module
         import numpy as np
+
+        import app as app_module
         _seed_student(isolated_paths['database_path'])
         app_module.store_embedding(1, np.zeros(128, dtype=np.float32))
         app_module.store_embedding(1, np.ones(128, dtype=np.float32))
@@ -87,7 +87,7 @@ class TestStudentPasswordChange:
     def test_weak_new_password_rejected(self, client, isolated_paths):
         _seed_student(isolated_paths['database_path'], password='OldPass123')
         _login_student(client)
-        resp = client.post('/student/profile/change-password', data={
+        client.post('/student/profile/change-password', data={
             'current_password': 'OldPass123', 'new_password': 'weak', 'confirm_password': 'weak',
         }, follow_redirects=True)
         conn = sqlite3.connect(isolated_paths['database_path'])
@@ -121,7 +121,6 @@ class TestStudentPasswordChange:
 
 class TestAdminPasswordChange:
     def test_wrong_current_password_rejected(self, client, isolated_paths):
-        import config as cfg
         login_as_admin(client)
         resp = client.post('/admin/settings/change-password', data={
             'current_password': 'wrong', 'new_password': 'NewAdminPass123', 'confirm_password': 'NewAdminPass123',

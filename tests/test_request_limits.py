@@ -1,9 +1,9 @@
 """Tests for session expiry configuration and request payload size limits."""
-import base64
+
+from conftest import login_as_admin
 
 import app as app_module
 import config as cfg
-from conftest import login_as_admin
 
 
 class TestSessionExpiry:

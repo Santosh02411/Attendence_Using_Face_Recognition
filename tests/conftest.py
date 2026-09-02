@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 os.environ.setdefault('FLASK_SECRET_KEY', 'test-secret-key-not-for-production')
 
 import pytest
+
 import app as app_module
 import config as cfg
 
@@ -38,6 +39,18 @@ def isolated_paths(tmp_path, monkeypatch):
     # re-enable them explicitly via monkeypatch to test them directly.
     monkeypatch.setattr(cfg, 'CAPTCHA_ENABLED', False)
     monkeypatch.setattr(app_module.limiter, 'enabled', False)
+
+    # Same reasoning for the anti-spoof and active-liveness-challenge
+    # checks (see face_security.py): both are heuristics tuned against
+    # real camera photos, and the synthetic random-noise JPEGs most tests
+    # use as stand-in "captured frames" aren't representative of that —
+    # JPEG-compressing pure noise produces its own periodic block
+    # artifacts that can trip the screen-replay heuristic, for reasons
+    # that have nothing to do with whatever the test actually exercises.
+    # test_face_security.py and the dedicated active-liveness/anti-spoof
+    # sections of test_attendance.py re-enable them explicitly.
+    monkeypatch.setattr(cfg, 'ANTI_SPOOF_ENABLED', False)
+    monkeypatch.setattr(cfg, 'ACTIVE_LIVENESS_ENABLED', False)
 
     # The Limiter's in-memory storage backend is a module-level singleton
     # (created once when `app` is imported) that otherwise persists for the

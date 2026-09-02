@@ -39,7 +39,7 @@ class TestAdminAccountManagement:
 
     def test_weak_password_is_rejected_for_new_admin(self, client, isolated_paths):
         login_as_admin(client)
-        resp = client.post('/admin/settings', data={
+        client.post('/admin/settings', data={
             'new_username': 'weakadmin', 'new_password': 'abc',
         }, follow_redirects=True)
         conn = sqlite3.connect(isolated_paths['database_path'])

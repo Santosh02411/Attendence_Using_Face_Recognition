@@ -1,10 +1,8 @@
 """Tests for admin/student login and password hashing."""
 import sqlite3
 
-from werkzeug.security import check_password_hash
-
-import app as app_module
 from conftest import login_as_admin, login_as_student
+from werkzeug.security import check_password_hash
 
 
 class TestAdminAuth:
