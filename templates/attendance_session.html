@@ -6,7 +6,15 @@
         <div><strong>Subject:</strong> {{ session_info.subject_name }} ({{ session_info.subject_code }})</div>
         <div><strong>Date:</strong> {{ session_info.date }}</div>
         <div><strong>Time:</strong> {{ session_info.time }}</div>
-        <div><strong>Status:</strong> {{ 'Active' if session_info.active else 'Inactive' }}</div>
+        <div><strong>Status:</strong>
+            {% if session_info.status == 'cancelled' %}Cancelled{% if session_info.cancellation_reason %} — {{ session_info.cancellation_reason }}{% endif %}
+            {% elif session_info.status == 'completed' %}Completed
+            {% elif session_info.active %}Active
+            {% else %}Scheduled{% endif %}
+        </div>
+        {% if session_info.restrict_branch or session_info.restrict_semester %}
+        <div><strong>Group:</strong> {{ session_info.restrict_branch or 'Any branch' }} / {{ session_info.restrict_semester or 'Any sem' }}</div>
+        {% endif %}
     </div>
     <div class="video-panel">
         <video id="attendVideo" autoplay muted></video>
@@ -20,9 +28,11 @@
     <h3>Student Attendance List</h3>
     <div class="attendance-summary">
         <div class="summary-stats">
-            <span class="stat-item">Total Students: {{ students|length }}</span>
-            <span class="stat-item present-count">Present: {{ students|selectattr('status')|list|length }}</span>
-            <span class="stat-item absent-count">Absent: {{ students|rejectattr('status')|list|length }}</span>
+            <span class="stat-item">Total Students: {{ summary.total_in_scope }}</span>
+            <span class="stat-item present-count">Present: {{ summary.present }}</span>
+            <span class="stat-item late-count">Late: {{ summary.late }}</span>
+            <span class="stat-item absent-count">Absent: {{ summary.absent }}</span>
+            <span class="stat-item failed-count" title="Spoof-suspected + failed liveness-challenge attempts for this session">Failed Attempts: {{ summary.failed_attempts }}</span>
         </div>
         <button id="refreshBtn" class="button small">Refresh</button>
     </div>
@@ -46,7 +56,7 @@
                 <td>{{ student.branch }}</td>
                 <td>{{ student.semester }}</td>
                 <td>
-                    <span class="status-badge {{ 'status-present' if student.status == 'Present' else 'status-absent' }}">
+                    <span class="status-badge {{ 'status-present' if student.status == 'Present' else ('status-late' if student.status == 'Late' else 'status-absent') }}">
                         {{ student.status if student.status else 'Not Marked' }}
                     </span>
                 </td>
@@ -71,9 +81,12 @@
             </select>
             <select name="action">
                 <option value="present">Mark Present</option>
+                <option value="late">Mark Late</option>
                 <option value="absent">Mark Absent</option>
+                <option value="clear">Clear Record</option>
             </select>
-            <button type="submit" class="button secondary">Override</button>
+            <input type="text" name="reason" placeholder="Reason (optional)" style="width: auto; margin-top: 0;">
+            <button type="submit" class="button secondary">Apply</button>
         </form>
         <a class="button" href="{{ url_for('export_session', session_id=session_info.id) }}">Export CSV</a>
     </div>
@@ -88,6 +101,12 @@
     let stream = null;
     let intervalId = null;
     let autoRefreshInterval = null;
+    // Previous sample from this same live feed — sent along as
+    // image_prev so the server can require actual pixel motion between
+    // the two before recognizing anything (see the image_prev handling
+    // in session_recognize() in app.py). Kept purely client-side; each
+    // capture becomes next capture's "previous" frame.
+    let lastImageData = null;
 
     async function startLiveDetection() {
         try {
@@ -108,10 +127,15 @@
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const imageData = canvas.toDataURL('image/jpeg');
+        const payload = { image: imageData };
+        if (lastImageData) {
+            payload.image_prev = lastImageData;
+        }
+        lastImageData = imageData;
         const response = await fetch(`/admin/session/${sessionId}/recognize`, {
             method: 'POST',
             headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ image: imageData })
+            body: JSON.stringify(payload)
         });
         const result = await response.json();
         if (result.status === 'present') {
@@ -136,6 +160,34 @@ function refreshAttendanceData() {
         });
 }
 
+// Real-time-ish updates via long-polling (see session_updates() in
+// app.py for how this works and its trade-offs under gunicorn's
+// multi-worker sync setup). Each cycle blocks server-side for up to
+// REALTIME_LONGPOLL_TIMEOUT_SECONDS, then always returns fresh data --
+// so this is safe to just re-issue in a loop indefinitely while the
+// page is open. Falls back to nothing extra if the request errors; the
+// slower setInterval poll below still keeps things eventually correct.
+let longPollVersion = 0;
+let longPollActive = true;
+
+function longPollForUpdates() {
+    if (!longPollActive) {
+        return;
+    }
+    fetch(`/admin/session/${sessionId}/updates?since=${longPollVersion}`)
+        .then(response => response.json())
+        .then(data => {
+            longPollVersion = data.version;
+            updateAttendanceTable(data.students);
+            updateSummaryStats(data.summary);
+            longPollForUpdates();
+        })
+        .catch(error => {
+            console.error('Long-poll error, retrying shortly:', error);
+            setTimeout(longPollForUpdates, 3000);
+        });
+}
+
 function updateAttendanceTable(students) {
     const tbody = document.querySelector('#attendanceTable tbody');
     tbody.innerHTML = '';
@@ -151,7 +203,7 @@ function updateAttendanceTable(students) {
             <td>${student.branch}</td>
             <td>${student.semester}</td>
             <td>
-                <span class="status-badge ${student.status === 'Present' ? 'status-present' : 'status-absent'}">
+                <span class="status-badge ${student.status === 'Present' ? 'status-present' : (student.status === 'Late' ? 'status-late' : 'status-absent')}">
                     ${student.status || 'Not Marked'}
                 </span>
             </td>
@@ -172,7 +224,9 @@ function updateAttendanceTable(students) {
 function updateSummaryStats(summary) {
     document.querySelector('.stat-item:nth-child(1)').textContent = `Total Students: ${summary.total}`;
     document.querySelector('.stat-item:nth-child(2)').textContent = `Present: ${summary.present}`;
-    document.querySelector('.stat-item:nth-child(3)').textContent = `Absent: ${summary.absent}`;
+    document.querySelector('.stat-item:nth-child(3)').textContent = `Late: ${summary.late}`;
+    document.querySelector('.stat-item:nth-child(4)').textContent = `Absent: ${summary.absent}`;
+    document.querySelector('.stat-item:nth-child(5)').textContent = `Failed Attempts: ${summary.failed_attempts}`;
 }
 
 function handleOverrideClick(e) {
@@ -198,7 +252,15 @@ function handleOverrideClick(e) {
 // Start auto-refresh when page loads
 document.addEventListener('DOMContentLoaded', function() {
     refreshAttendanceData();
-    autoRefreshInterval = setInterval(refreshAttendanceData, 5000); // Refresh every 5 seconds
+    longPollForUpdates();
+    // Slow safety-net poll -- covers the case where the long-poll signal
+    // isn't seen (a different gunicorn worker handled the change; see
+    // session_updates()'s docstring) or the long-poll loop errored out.
+    autoRefreshInterval = setInterval(refreshAttendanceData, 20000);
+});
+
+window.addEventListener('beforeunload', function() {
+    longPollActive = false;
 });
 
 // Manual refresh button
@@ -244,6 +306,14 @@ startStream.addEventListener('click', () => startLiveDetection());
 
 .absent-count {
     color: #dc2626;
+}
+
+.late-count {
+    color: #b45309;
+}
+
+.failed-count {
+    color: #b91c1c;
 }
 
 .student-row.present-row {

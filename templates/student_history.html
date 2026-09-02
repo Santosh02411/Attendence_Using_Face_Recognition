@@ -14,23 +14,79 @@
     <div class="meter" title="{{ percentage }}%">
         <div class="meter-fill {% if percentage < 50 %}danger{% elif percentage < 75 %}warning{% endif %}" style="width: {{ percentage }}%;"></div>
     </div>
+    {% if attendance and percentage < low_attendance_threshold %}
+    <div class="flash warning" style="margin-top: 0.75rem;">
+        Your attendance is {{ percentage }}%, below the {{ low_attendance_threshold }}% threshold. If a session below looks
+        wrong, use "Request Correction" on that row.
+    </div>
+    {% endif %}
     <div class="table-container" style="overflow-x: auto; margin-top: 1.5rem;">
     <table>
-        <thead><tr><th>Session</th><th>Date</th><th>Time</th><th>Status</th><th>Recorded</th></tr></thead>
+        <thead><tr><th>Session</th><th>Date</th><th>Time</th><th>Status</th><th>Recorded</th><th>Action</th></tr></thead>
         <tbody>
             {% for row in attendance %}
             <tr>
                 <td>{{ row.title }}</td>
                 <td>{{ row.date }}</td>
                 <td>{{ row.time }}</td>
-                <td><span class="status-badge {{ 'status-present' if row.status == 'Present' else 'status-absent' }}">{{ row.status }}</span></td>
-                <td>{{ row.timestamp }}</td>
+                <td>
+                    <span class="status-badge {{ 'status-present' if row.status == 'Present' else ('status-late' if row.status == 'Late' else 'status-absent') }}">
+                        {{ row.status if row.status else 'Absent' }}
+                    </span>
+                </td>
+                <td>{{ row.timestamp if row.timestamp else '-' }}</td>
+                <td>
+                    {% if row.session_id in locked_session_ids %}
+                    <span style="color: var(--muted); font-size: 0.85rem;">Locked</span>
+                    {% elif row.session_id in pending_session_ids %}
+                    <span style="color: var(--muted); font-size: 0.85rem;">Request pending</span>
+                    {% else %}
+                    <details>
+                        <summary class="button small secondary" style="display: inline-block; cursor: pointer;">Request Correction</summary>
+                        <form action="{{ url_for('request_attendance_correction') }}" method="POST" style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; min-width: 220px;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="session_id" value="{{ row.session_id }}">
+                            <select name="requested_status" required>
+                                <option value="Present">Should be Present</option>
+                                <option value="Late">Should be Late</option>
+                                <option value="Absent">Should be Absent</option>
+                            </select>
+                            <textarea name="reason" placeholder="Why should this change?" required rows="2"></textarea>
+                            <button type="submit" class="button small">Submit Request</button>
+                        </form>
+                    </details>
+                    {% endif %}
+                </td>
             </tr>
             {% else %}
-            <tr><td colspan="5" style="text-align: center; color: var(--muted);">No attendance records yet.</td></tr>
+            <tr><td colspan="6" style="text-align: center; color: var(--muted);">No sessions yet.</td></tr>
             {% endfor %}
         </tbody>
     </table>
     </div>
+</div>
+
+<div class="card wide-card">
+    <h3>My Correction Requests</h3>
+    {% if correction_requests %}
+    <div class="table-container" style="overflow-x: auto;">
+    <table>
+        <thead><tr><th>Session</th><th>Requested</th><th>Reason</th><th>Status</th><th>Admin Note</th></tr></thead>
+        <tbody>
+            {% for r in correction_requests %}
+            <tr>
+                <td>{{ r.session_title }} ({{ r.session_date }})</td>
+                <td>{{ r.requested_status }}</td>
+                <td>{{ r.reason }}</td>
+                <td>{{ r.status }}</td>
+                <td>{{ r.admin_note or '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color: var(--muted);">No correction requests filed yet.</p>
+    {% endif %}
 </div>
 {% endblock %}

@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <h1>Recognition Settings</h1>
+    <p>Recognition model/configuration management and threshold configuration.</p>
+</div>
+
+<div class="card wide-card">
+    <h2>Adjustable Thresholds</h2>
+    <p style="color: var(--muted);">
+        Changes here take effect immediately, without restarting the app — they're stored in the database and override
+        the corresponding environment/<code>config.py</code> default until reset.
+    </p>
+    <form method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% for key, value in effective.items() %}
+        <label>{{ key }} {% if key in overridden %}<span class="status-badge status-late" style="font-size: 0.7rem;">Overridden</span>{% endif %}</label>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="text" name="{{ key }}" value="{{ value }}" style="flex: 1;">
+            <span style="color: var(--muted); font-size: 0.85rem; white-space: nowrap;">default: {{ defaults[key] }}</span>
+            {% if key in overridden %}
+            <form action="{{ url_for('reset_recognition_setting', key=key) }}" method="POST" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="button small secondary">Reset</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+        <div class="form-actions" style="margin-top: 1rem;">
+            <button type="submit">Save Thresholds</button>
+        </div>
+    </form>
+
+    {% if override_rows %}
+    <h3 style="margin-top: 1.5rem;">Override History</h3>
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>Setting</th><th>Value</th><th>Updated</th><th>By</th></tr></thead>
+            <tbody>
+                {% for row in override_rows %}
+                <tr>
+                    <td>{{ row.key }}</td>
+                    <td>{{ row.value }}</td>
+                    <td>{{ row.updated_at }}</td>
+                    <td>{{ row.updated_by }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <h2>Recognition Model</h2>
+    <div class="profile-details">
+        <div><strong>Model Version Label</strong>{{ current_model_version }}</div>
+        <div><strong>Model File</strong>{{ model_info.EMBEDDER_MODEL_PATH }}</div>
+        <div><strong>Input Size</strong>{{ model_info.EMBEDDING_INPUT_SIZE }}px</div>
+        <div><strong>Ensemble Top-K</strong>{{ model_info.MATCH_TOP_K }}</div>
+    </div>
+
+    {% if model_version_counts %}
+    <h3>Stored Embeddings by Model Version</h3>
+    <p style="color: var(--muted); font-size: 0.9rem;">
+        If you change <code>EMBEDDER_MODEL_PATH</code> or bump <code>EMBEDDER_MODEL_VERSION</code>, embeddings tagged
+        with an older version were produced by a different model and may need re-enrollment for best accuracy.
+    </p>
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>Model Version</th><th>Stored Embeddings</th></tr></thead>
+            <tbody>
+                {% for row in model_version_counts %}
+                <tr>
+                    <td>
+                        {{ row.model_version }}
+                        {% if row.model_version == current_model_version %}<span class="status-badge status-present" style="font-size: 0.7rem;">Current</span>{% else %}<span class="status-badge status-late" style="font-size: 0.7rem;">Outdated</span>{% endif %}
+                    </td>
+                    <td>{{ row.count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <h2>Feature Toggles (read-only)</h2>
+    <p style="color: var(--muted);">Set via environment variables — see <code>.env.example</code> and the README's "Anti-Proxy / Face Recognition Security" section.</p>
+    <div class="profile-details">
+        {% for key, value in feature_toggles.items() %}
+        <div><strong>{{ key }}</strong>{{ 'Enabled' if value else 'Disabled' }}</div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+        <h2 style="margin: 0;">Attendance Reports</h2>
+        <a href="{{ url_for('export_attendance_report', subject_id=filters.subject_id, semester=filters.semester, start_date=filters.start_date, end_date=filters.end_date) }}" class="button small">Export CSV</a>
+    </div>
+    <p style="color: var(--muted);">
+        Filter by subject, date range, and/or semester to build a subject-wise, date-range, or semester report — the
+        table and trend below always reflect the current filters. Rows below the {{ threshold }}% threshold are
+        flagged the same way as the dashboard's Low Attendance Alerts.
+    </p>
+
+    <form method="get" class="inline-form" style="flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem;">
+        <select name="subject_id">
+            <option value="">All Subjects</option>
+            {% for subj in subjects %}
+            <option value="{{ subj.id }}" {{ 'selected' if filters.subject_id|string == subj.id|string else '' }}>{{ subj.name }} ({{ subj.code }})</option>
+            {% endfor %}
+        </select>
+        <select name="semester">
+            <option value="">All Semesters</option>
+            {% for sem in semesters %}
+            <option value="{{ sem }}" {{ 'selected' if filters.semester == sem else '' }}>{{ sem }}</option>
+            {% endfor %}
+        </select>
+        <input type="date" name="start_date" value="{{ filters.start_date }}" title="Start date">
+        <input type="date" name="end_date" value="{{ filters.end_date }}" title="End date">
+        <select name="granularity">
+            <option value="day" {{ 'selected' if filters.granularity == 'day' else '' }}>Daily trend</option>
+            <option value="week" {{ 'selected' if filters.granularity == 'week' else '' }}>Weekly trend</option>
+            <option value="month" {{ 'selected' if filters.granularity == 'month' else '' }}>Monthly trend</option>
+        </select>
+        <button type="submit" class="button small">Apply Filters</button>
+        <a href="{{ url_for('admin_reports') }}" class="button small secondary">Reset</a>
+    </form>
+
+    <h3>Attendance Rate Trend</h3>
+    {% if trend %}
+    <div class="trend-chart">
+        {% for point in trend %}
+        <div class="trend-bar-wrap" title="{{ point.label }}: {{ point.percentage }}%">
+            <div class="trend-bar {% if point.percentage < 50 %}danger{% elif point.percentage < threshold %}warning{% endif %}" style="height: {{ point.percentage }}%;"></div>
+            <span class="trend-label">{{ point.label }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p>No sessions match these filters.</p>
+    {% endif %}
+
+    <h3 style="margin-top: 2rem;">Per-Student Summary</h3>
+    {% if report_rows %}
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Roll No</th>
+                    <th>Name</th>
+                    <th>Semester</th>
+                    <th>Sessions</th>
+                    <th>Present</th>
+                    <th>Late</th>
+                    <th>Absent</th>
+                    <th>Percentage</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report_rows %}
+                <tr {% if row.below_threshold %}style="background: rgba(220, 38, 38, 0.06);"{% endif %}>
+                    <td>{{ row.roll_no }}</td>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.semester }}</td>
+                    <td>{{ row.total_sessions }}</td>
+                    <td>{{ row.present }}</td>
+                    <td>{{ row.late }}</td>
+                    <td>{{ row.absent }}</td>
+                    <td style="min-width: 160px;">
+                        <div class="meter" title="{{ row.percentage }}%">
+                            <div class="meter-fill {% if row.below_threshold %}danger{% elif row.percentage < 90 %}warning{% endif %}" style="width: {{ row.percentage }}%;"></div>
+                        </div>
+                        <span style="font-size: 0.85rem; color: var(--muted);">{{ row.percentage }}%{% if row.below_threshold %} ⚠{% endif %}</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No data for the current filters.</p>
+    {% endif %}
+</div>
+
+<style>
+.trend-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    height: 160px;
+    padding: 0.5rem 0 0;
+    overflow-x: auto;
+}
+.trend-bar-wrap {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    min-width: 28px;
+    height: 130px;
+}
+.trend-bar {
+    width: 18px;
+    background: #10b981;
+    border-radius: 4px 4px 0 0;
+    min-height: 2px;
+}
+.trend-bar.warning { background: #f59e0b; }
+.trend-bar.danger { background: #dc2626; }
+.trend-label {
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-top: 0.25rem;
+    white-space: nowrap;
+}
+</style>
+{% endblock %}

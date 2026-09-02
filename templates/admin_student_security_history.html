@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+        <h2 style="margin: 0;">Security History — {{ student.name }} ({{ student.roll_no }})</h2>
+        {% if student.security_escalated %}
+        <form action="{{ url_for('clear_security_escalation', student_id=student.id) }}" method="POST" onsubmit="return confirm('Clear this student\'s security escalation?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="button small warning">Clear Escalation</button>
+        </form>
+        {% endif %}
+    </div>
+
+    <div class="profile-details">
+        <div><strong>Risk Score</strong>{{ risk_score }}/100 (escalation at {{ escalation_threshold }})</div>
+        <div><strong>Status</strong>
+            {% if student.security_escalated %}<span class="status-badge status-absent">Escalated</span>{% else %}<span class="status-badge status-present">OK</span>{% endif %}
+        </div>
+        <div><strong>Last Login</strong>{{ student.last_login_at or 'never' }}</div>
+        <div><strong>Last Login IP</strong>{{ student.last_login_ip or '—' }}</div>
+    </div>
+    <div class="meter" title="{{ risk_score }}/100">
+        <div class="meter-fill {% if risk_score >= escalation_threshold %}danger{% elif risk_score >= escalation_threshold // 2 %}warning{% endif %}" style="width: {{ risk_score }}%;"></div>
+    </div>
+
+    {% if risk_breakdown %}
+    <h3 style="margin-top: 1.5rem;">Risk Score Breakdown</h3>
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>Event Type</th><th>Points</th></tr></thead>
+            <tbody>
+                {% for action, points in risk_breakdown.items() %}
+                <tr><td>{{ action }}</td><td>{{ points }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <h3>Known Devices</h3>
+    {% if devices %}
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>Fingerprint</th><th>Last IP</th><th>First Seen</th><th>Last Seen</th><th>Times Seen</th></tr></thead>
+            <tbody>
+                {% for d in devices %}
+                <tr>
+                    <td><code>{{ d.fingerprint_hash[:16] }}...</code></td>
+                    <td>{{ d.ip_address }}</td>
+                    <td>{{ d.first_seen }}</td>
+                    <td>{{ d.last_seen }}</td>
+                    <td>{{ d.seen_count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: var(--muted);">No device fingerprints on record yet.</p>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <h3>Recent Login Sessions</h3>
+    {% if login_sessions %}
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>IP</th><th>Created</th><th>Last Active</th><th>Ended</th></tr></thead>
+            <tbody>
+                {% for s in login_sessions %}
+                <tr>
+                    <td>{{ s.ip_address }}</td>
+                    <td>{{ s.created_at }}</td>
+                    <td>{{ s.last_seen_at }}</td>
+                    <td>{{ s.ended_at or 'Active' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: var(--muted);">No login sessions on record yet.</p>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <h3>Recent Security Events</h3>
+    {% if security_events %}
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>When</th><th>Action</th><th>Severity</th><th>Details</th></tr></thead>
+            <tbody>
+                {% for e in security_events %}
+                <tr>
+                    <td>{{ e.timestamp }}</td>
+                    <td>{{ e.action }}</td>
+                    <td>
+                        {% set sev = event_severity(e.action) %}
+                        <span class="status-badge {{ 'status-absent' if sev in ('high', 'critical') else ('status-late' if sev == 'medium' else 'status-present') }}">{{ sev }}</span>
+                    </td>
+                    <td>{{ e.details or '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: var(--muted);">No security events on record.</p>
+    {% endif %}
+</div>
+{% endblock %}

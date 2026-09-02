@@ -2,10 +2,18 @@
 {% from '_pagination.html' import pagination_controls %}
 {% block content %}
 <div class="card wide-card">
-    <h2>Audit Log</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.5rem;">
+        <h2 style="margin: 0;">Audit Log</h2>
+        <div style="display: flex; gap: 0.5rem;">
+            <a href="{{ url_for('audit_log_view') }}" class="button small {{ '' if filter_type == 'security' else 'secondary' }}">All Events</a>
+            <a href="{{ url_for('audit_log_view', filter='security') }}" class="button small {{ 'secondary' if filter_type == 'security' else '' }}">Security Events</a>
+        </div>
+    </div>
     <p style="color: var(--muted); margin-bottom: 1.5rem;">
         Recorded actions — logins, lockouts, and admin-initiated changes
         (deletions, overrides, account management), newest first.
+        {% if filter_type == 'security' %}Showing security-relevant events only (failed logins, lockouts, spoof/liveness-challenge failures).{% endif %}
+        {% if actor %}Filtered to actor "{{ actor }}" — <a href="{{ url_for('audit_log_view', filter=filter_type if filter_type != 'all' else None) }}">clear</a>.{% endif %}
     </p>
 
     <div class="table-container" style="overflow-x: auto;">
@@ -38,6 +46,6 @@
             </tbody>
         </table>
     </div>
-    {{ pagination_controls(pagination, 'audit_log_view') }}
+    {{ pagination_controls(pagination, 'audit_log_view', extra_args) }}
 </div>
 {% endblock %}

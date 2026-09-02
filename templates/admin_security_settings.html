@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <h1>Security Settings</h1>
+    <p>Configurable security policies — changes take effect immediately, no restart needed.</p>
+</div>
+
+<div class="card wide-card">
+    <form method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% for key, value in effective.items() %}
+        <label>{{ key }} {% if key in overridden %}<span class="status-badge status-late" style="font-size: 0.7rem;">Overridden</span>{% endif %}</label>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="text" name="{{ key }}" value="{{ value }}" style="flex: 1;">
+            <span style="color: var(--muted); font-size: 0.85rem; white-space: nowrap;">default: {{ defaults[key] }}</span>
+            {% if key in overridden %}
+            <form action="{{ url_for('reset_security_setting', key=key) }}" method="POST" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="button small secondary">Reset</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+        <div class="form-actions" style="margin-top: 1rem;">
+            <button type="submit">Save Settings</button>
+        </div>
+    </form>
+
+    <p style="color: var(--muted); font-size: 0.85rem; margin-top: 1.5rem;">
+        <strong>SECURITY_RISK_ESCALATION_THRESHOLD</strong>: risk score (0-100) at which a student is automatically escalated, blocking their attendance marking until an admin clears it (see <a href="{{ url_for('security_dashboard') }}">Security Dashboard</a>).<br>
+        <strong>CONCURRENT_SESSION_WINDOW_MINUTES</strong>: how close together two active login sessions from different devices/IPs need to be to count as "concurrent".<br>
+        <strong>NETWORK_CHANGE_WINDOW_MINUTES</strong> / <strong>NETWORK_CHANGE_IMPOSSIBLE_MINUTES</strong>: how soon after a login from one network a login from a different network is flagged as a network change (wider window) or an impossible-location suspicion (tighter window) — an IP-address heuristic only, not true geolocation.
+    </p>
+</div>
+{% endblock %}

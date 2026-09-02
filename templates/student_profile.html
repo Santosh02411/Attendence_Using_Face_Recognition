@@ -27,19 +27,43 @@
         <div><strong>Roll Number</strong>{{ student.roll_no }}</div>
         <div><strong>Branch</strong>{{ student.branch }}</div>
         <div><strong>Semester</strong>{{ student.semester }}</div>
+        <div><strong>Enrollment Status</strong>
+            <span class="status-badge {{ 'status-present' if enrollment.status == 'complete' else ('status-late' if enrollment.status == 'pending' else 'status-absent') }}">
+                {{ {'complete': 'Complete', 'pending': 'Pending', 'not_enrolled': 'Not Enrolled'}[enrollment.status] }}
+            </span>
+        </div>
     </div>
     <div class="meter" title="Attendance {{ percentage }}%">
         <div class="meter-fill {% if percentage < 50 %}danger{% elif percentage < 75 %}warning{% endif %}" style="width: {{ percentage }}%;"></div>
     </div>
+    {% if total_sessions > 0 and percentage < low_attendance_threshold %}
+    <div class="flash warning" style="margin-top: 0.75rem;">
+        Your attendance is {{ percentage }}%, below the {{ low_attendance_threshold }}% threshold. If you think this is wrong,
+        check your <a href="{{ url_for('student_history') }}">attendance history</a> — you can request a correction there.
+    </div>
+    {% endif %}
     <p style="color: var(--muted); font-size: 0.9rem;">
         {% if embedding_count == 0 %}
         No face photos on record — face-based attendance marking won't
         work until you add some.
         <a href="{{ url_for('student_register_face') }}">Add your face photos now</a>.
         {% else %}
-        {{ embedding_count }} face photo{{ 's' if embedding_count != 1 }} on record from registration.
+        {{ embedding_count }} face photo{{ 's' if embedding_count != 1 }} on record
+        {% if enrollment.avg_quality is not none %}(average quality {{ enrollment.avg_quality }}/100){% endif %}.
+        <a href="{{ url_for('student_face_photos') }}">Manage my face photos</a>.
         {% endif %}
     </p>
+    {% if enrollment.status == 'pending' %}
+    <div class="flash warning" style="margin-top: 0.75rem;">
+        Your face enrollment quality is low{% if enrollment.photo_count < 3 %} and you have fewer than 3 photos on file{% endif %} —
+        attendance recognition may be less reliable for you. Consider
+        <a href="{{ url_for('student_register_face') }}">adding more photos</a>
+        or doing a full <form action="{{ url_for('reenroll_face') }}" method="POST" style="display: inline;" onsubmit="return confirm('This clears all your current face photos so you can start fresh. Continue?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" style="background: none; border: none; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit;">re-enrollment</button>
+        </form>.
+    </div>
+    {% endif %}
     <a href="{{ url_for('student_history') }}" class="button small">View Full Attendance History</a>
 </div>
 

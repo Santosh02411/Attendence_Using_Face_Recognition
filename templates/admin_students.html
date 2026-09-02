@@ -26,6 +26,8 @@
                     <th>Branch</th>
                     <th>Semester</th>
                     <th>Photos</th>
+                    <th>Enrollment</th>
+                    <th>Status</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -39,6 +41,34 @@
                     <td>{{ student.semester }}</td>
                     <td>{{ student.photo_count }}</td>
                     <td>
+                        {% set enrollment = enrollment_by_student[student.id] %}
+                        <span class="status-badge {{ 'status-present' if enrollment.status == 'complete' else ('status-late' if enrollment.status == 'pending' else 'status-absent') }}">
+                            {{ {'complete': 'Complete', 'pending': 'Pending', 'not_enrolled': 'Not Enrolled'}[enrollment.status] }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if student.security_escalated %}
+                        <span class="status-badge status-absent" title="Escalated for a high risk score">Escalated</span>
+                        {% elif student.id in locked_student_ids %}
+                        <span class="status-badge status-absent" title="Locked until {{ student.attendance_locked_until }}">Attendance Locked</span>
+                        {% else %}
+                        <span class="status-badge status-present">OK</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('admin_student_face_photos', student_id=student.id) }}" class="button small secondary">Face Photos</a>
+                        <a href="{{ url_for('student_security_history', student_id=student.id) }}" class="button small secondary">Security</a>
+                        {% if student.security_escalated %}
+                        <form action="{{ url_for('clear_security_escalation', student_id=student.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Clear this security escalation?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="button small warning">Clear Escalation</button>
+                        </form>
+                        {% elif student.id in locked_student_ids %}
+                        <form action="{{ url_for('clear_attendance_lock', student_id=student.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Clear the attendance-marking lock for this student?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="button small">Clear Lock</button>
+                        </form>
+                        {% endif %}
                         <form action="{{ url_for('reset_student_password', student_id=student.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Reset password for this student? A new temporary password will be generated.');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="button small">Reset Password</button>
@@ -51,7 +81,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted);">
+                    <td colspan="9" style="text-align: center; padding: 2rem; color: var(--muted);">
                         {% if search %}No students match "{{ search }}".{% else %}No students registered yet.{% endif %}
                     </td>
                 </tr>

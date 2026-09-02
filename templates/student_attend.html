@@ -120,39 +120,67 @@ document.getElementById('markAttendanceBtn').onclick = function() {
     }
 
     document.getElementById('markAttendanceBtn').disabled = true;
+    document.getElementById('resultBox').textContent = 'Preparing liveness check…';
 
-    // Capture a short burst of frames spread over ~1.6s from the live
-    // video feed. The server uses this burst for a two-signal liveness
-    // check (see check_liveness_sequence() in app.py): pixel motion
-    // between frames, plus a detectable blink (eyes visible -> not
-    // visible -> visible again) — a live person naturally blinks, a
-    // static photo or screen generally can't.
-    const FRAME_COUNT = 5;
+    // Capture a short burst of frames spread over ~2s from the live video
+    // feed. The server runs two independent liveness layers on this
+    // burst (see check_liveness_sequence() and _verify_active_challenge()
+    // in app.py):
+    //   1. Passive: pixel motion between frames, plus a detectable blink.
+    //   2. Active: the ONE random action the server asked for via
+    //      /student/liveness-challenge just below (a static photo or a
+    //      pre-recorded clip can't reliably contain whatever action was
+    //      randomly requested at the right moment).
+    const FRAME_COUNT = 6;
     const FRAME_GAP_MS = 350;
-    const frames = [];
 
-    function captureNext(i) {
-        frames.push(captureFrame());
-        if (i === Math.floor(FRAME_COUNT / 2)) {
-            document.getElementById('resultBox').textContent = '👁️ Please blink naturally…';
-        } else {
-            document.getElementById('resultBox').textContent = 'Hold still…';
+    // See /student/liveness-challenge in app.py — issues one random
+    // challenge (or {enabled: false} if ACTIVE_LIVENESS_ENABLED is off
+    // server-side) and stores it server-side, single-use, keyed by a
+    // token this page must echo back with the captured frames.
+    fetch('/student/liveness-challenge', {headers: csrfHeaders({})})
+        .then(r => r.json())
+        .then(challengeData => {
+            startCapture(challengeData);
+        })
+        .catch(e => {
+            console.error('Could not fetch liveness challenge:', e);
+            document.getElementById('resultBox').textContent = '❌ Could not start liveness check. Please try again.';
+            document.getElementById('markAttendanceBtn').disabled = false;
+        });
+
+    function startCapture(challengeData) {
+        const frames = [];
+        const promptText = challengeData.enabled
+            ? (challengeData.prompt || 'Please follow the on-screen instruction.')
+            : null;
+
+        function captureNext(i) {
+            frames.push(captureFrame());
+            if (promptText) {
+                document.getElementById('resultBox').textContent = '👉 ' + promptText;
+            } else {
+                document.getElementById('resultBox').textContent = 'Hold still…';
+            }
+            if (frames.length < FRAME_COUNT) {
+                setTimeout(() => captureNext(i + 1), FRAME_GAP_MS);
+            } else {
+                submitFrames(frames, challengeData.enabled ? challengeData.token : null);
+            }
         }
-        if (frames.length < FRAME_COUNT) {
-            setTimeout(() => captureNext(i + 1), FRAME_GAP_MS);
-        } else {
-            submitFrames();
-        }
+
+        captureNext(0);
     }
 
-    function submitFrames() {
+    function submitFrames(frames, challengeToken) {
         document.getElementById('resultBox').textContent = 'Processing face recognition...';
 
         const card = document.querySelector('.card.wide-card');
         const payload = {
             session_id: parseInt(card.dataset.sessionId),
             student_id: parseInt(card.dataset.studentId),
-            images: frames
+            images: frames,
+            challenge_token: challengeToken
         };
 
         fetch('/student/attend/mark', {
@@ -191,8 +219,6 @@ document.getElementById('markAttendanceBtn').onclick = function() {
             document.getElementById('markAttendanceBtn').disabled = false;
         });
     }
-
-    captureNext(0);
 };
 
 // Cleanup camera when page unloads

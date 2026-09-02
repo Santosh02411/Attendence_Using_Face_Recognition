@@ -102,4 +102,67 @@
     <p>No alerting students found.</p>
     {% endif %}
 </div>
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>Security Alerts (Last {{ security_window_days }} Days)</h3>
+        <a href="{{ url_for('audit_log_view', filter='security') }}" class="button small">View Audit Log</a>
+    </div>
+    <p style="color: var(--muted); margin-top: -0.5rem;">
+        Students with repeated spoof-suspected or failed liveness-challenge attempts while marking attendance.
+    </p>
+    {% if security_alerts %}
+    <div class="table-container" style="overflow-x: auto;">
+    <table>
+        <thead><tr><th>Name</th><th>Roll No</th><th>Events</th><th>Last Seen</th><th></th></tr></thead>
+        <tbody>
+            {% for alert in security_alerts %}
+            <tr>
+                <td>{{ alert.student_name or ('Student #' ~ alert.student_id) }}</td>
+                <td>{{ alert.roll_no or '' }}</td>
+                <td><span class="status-badge status-absent">{{ alert.event_count }}</span></td>
+                <td>{{ alert.last_seen }}</td>
+                <td><a href="{{ url_for('audit_log_view', filter='security', actor=alert.student_id) }}" class="button small">Details</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p>No spoof or liveness-challenge alerts in this window.</p>
+    {% endif %}
+</div>
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>Enrollment Reminders</h3>
+        <a href="{{ url_for('admin_students') }}" class="button small">View All Students</a>
+    </div>
+    <p style="color: var(--muted); margin-top: -0.5rem;">
+        Students with incomplete or poor-quality face enrollment (fewer than {{ enrollment_min_photos }} photos, or below-threshold average quality) who may need to re-enroll.
+    </p>
+    {% if enrollment_reminders %}
+    <div class="table-container" style="overflow-x: auto;">
+    <table>
+        <thead><tr><th>Name</th><th>Roll No</th><th>Status</th><th>Photos</th><th>Avg Quality</th><th></th></tr></thead>
+        <tbody>
+            {% for reminder in enrollment_reminders %}
+            <tr>
+                <td>{{ reminder.name }}</td>
+                <td>{{ reminder.roll_no }}</td>
+                <td>
+                    <span class="status-badge {{ 'status-absent' if reminder.status == 'not_enrolled' else 'status-late' }}">
+                        {{ 'Not Enrolled' if reminder.status == 'not_enrolled' else 'Pending' }}
+                    </span>
+                </td>
+                <td>{{ reminder.photo_count }}</td>
+                <td>{{ reminder.avg_quality if reminder.avg_quality is not none else '—' }}</td>
+                <td><a href="{{ url_for('admin_student_face_photos', student_id=reminder.student_id) }}" class="button small">Details</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p>No enrollment issues found.</p>
+    {% endif %}
+</div>
 {% endblock %}

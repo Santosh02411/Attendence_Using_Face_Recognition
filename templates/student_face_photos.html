@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <h1>My Face Photos</h1>
+    <p>Registered photos used for face-recognition attendance marking.</p>
+</div>
+
+<div class="card wide-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+        <div>
+            <span class="status-badge {{ 'status-present' if enrollment.status == 'complete' else ('status-late' if enrollment.status == 'pending' else 'status-absent') }}">
+                {{ {'complete': 'Complete', 'pending': 'Pending', 'not_enrolled': 'Not Enrolled'}[enrollment.status] }}
+            </span>
+            <span style="color: var(--muted); margin-left: 0.5rem;">
+                {{ enrollment.photo_count }} photo{{ 's' if enrollment.photo_count != 1 }}
+                {% if enrollment.avg_quality is not none %} — average quality {{ enrollment.avg_quality }}/100{% endif %}
+            </span>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+            <a href="{{ url_for('student_register_face') }}" class="button small">Add More Photos</a>
+            <form action="{{ url_for('reenroll_face') }}" method="POST" onsubmit="return confirm('This clears ALL your current face photos so you can start fresh. Continue?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="button small warning">Start Fresh (Re-enroll)</button>
+            </form>
+        </div>
+    </div>
+
+    {% if enrollment.status == 'pending' %}
+    <div class="flash warning" style="margin-top: 1rem;">
+        Your enrollment quality is low — recognition may be less reliable for you. Consider adding a few more clear, well-lit photos, or starting fresh above.
+    </div>
+    {% endif %}
+
+    <div class="table-container" style="overflow-x: auto; margin-top: 1.5rem;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Photo</th>
+                    <th>Quality</th>
+                    <th>Added</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for photo in photos %}
+                <tr>
+                    <td>
+                        {% if photo.image_filename %}
+                        <img src="{{ url_for('student_face_photo_image', embedding_id=photo.id) }}" alt="Registered face photo" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px;">
+                        {% else %}
+                        <span style="color: var(--muted);">—</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ photo.quality_score if photo.quality_score is not none else '—' }}</td>
+                    <td>{{ photo.created_at }}</td>
+                    <td>
+                        <form action="{{ url_for('delete_own_face_photo', embedding_id=photo.id) }}" method="POST" onsubmit="return confirm('Remove this photo?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="button small warning">Remove</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 2rem; color: var(--muted);">No face photos registered yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

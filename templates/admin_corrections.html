@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.5rem;">
+        <h2 style="margin: 0;">Attendance Correction Requests</h2>
+        <div style="display: flex; gap: 0.5rem;">
+            <a href="{{ url_for('admin_corrections', status='pending') }}" class="button small {{ '' if status_filter == 'pending' else 'secondary' }}">Pending</a>
+            <a href="{{ url_for('admin_corrections', status='approved') }}" class="button small {{ '' if status_filter == 'approved' else 'secondary' }}">Approved</a>
+            <a href="{{ url_for('admin_corrections', status='rejected') }}" class="button small {{ '' if status_filter == 'rejected' else 'secondary' }}">Rejected</a>
+            <a href="{{ url_for('admin_corrections', status='all') }}" class="button small {{ '' if status_filter == 'all' else 'secondary' }}">All</a>
+        </div>
+    </div>
+    <p style="color: var(--muted); margin-bottom: 1.5rem;">
+        A student believes their recorded attendance for a session is wrong — approving applies their requested
+        status the same way a manual override would; rejecting just records the decision. Both are blocked once a
+        session is past the attendance edit-lock window.
+    </p>
+
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Requested</th>
+                    <th>Student</th>
+                    <th>Session</th>
+                    <th>Requested Status</th>
+                    <th>Reason</th>
+                    <th>Status</th>
+                    <th>Resolved</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in requests %}
+                <tr>
+                    <td>{{ r.created_at }}</td>
+                    <td>{{ r.student_name }} ({{ r.roll_no }})</td>
+                    <td>{{ r.session_title }} — {{ r.session_date }} {{ r.session_time }}{% if r.subject_name %} ({{ r.subject_name }}){% endif %}</td>
+                    <td><span class="status-badge {{ 'status-present' if r.requested_status == 'Present' else ('status-late' if r.requested_status == 'Late' else 'status-absent') }}">{{ r.requested_status }}</span></td>
+                    <td>{{ r.reason or '' }}</td>
+                    <td>{{ r.status }}</td>
+                    <td>
+                        {% if r.resolved_at %}{{ r.resolved_at }} by {{ r.resolved_by }}{% if r.admin_note %} — {{ r.admin_note }}{% endif %}{% else %}—{% endif %}
+                    </td>
+                    <td>
+                        {% if r.status == 'pending' %}
+                        <form action="{{ url_for('resolve_attendance_correction', request_id=r.id, action='approve') }}" method="POST" style="display: inline;" onsubmit="return confirm('Approve this correction request?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="button small">Approve</button>
+                        </form>
+                        <form action="{{ url_for('resolve_attendance_correction', request_id=r.id, action='reject') }}" method="POST" style="display: inline;" onsubmit="return confirm('Reject this correction request?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="button small warning">Reject</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 2rem; color: var(--muted);">No {{ status_filter if status_filter != 'all' else '' }} correction requests.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

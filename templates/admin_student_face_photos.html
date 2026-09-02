@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+        <h2 style="margin: 0;">Face Photos — {{ student.name }} ({{ student.roll_no }})</h2>
+        <form action="{{ url_for('admin_reset_face_data', student_id=student.id) }}" method="POST" onsubmit="return confirm('This removes ALL registered face photos for this student. They will need to re-enroll. Continue?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="button small warning">Reset All Face Data</button>
+        </form>
+    </div>
+    <p style="color: var(--muted);">
+        <span class="status-badge {{ 'status-present' if enrollment.status == 'complete' else ('status-late' if enrollment.status == 'pending' else 'status-absent') }}">
+            {{ {'complete': 'Complete', 'pending': 'Pending', 'not_enrolled': 'Not Enrolled'}[enrollment.status] }}
+        </span>
+        {{ enrollment.photo_count }} photo{{ 's' if enrollment.photo_count != 1 }}
+        {% if enrollment.avg_quality is not none %} — average quality {{ enrollment.avg_quality }}/100{% endif %}
+        — current recognition model: <code>{{ current_model_version }}</code>
+    </p>
+
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Photo</th>
+                    <th>Quality</th>
+                    <th>Model Version</th>
+                    <th>Added</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for photo in photos %}
+                <tr>
+                    <td>
+                        {% if photo.image_filename %}
+                        <img src="{{ url_for('admin_face_photo_image', embedding_id=photo.id) }}" alt="Registered face photo" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px;">
+                        {% else %}
+                        <span style="color: var(--muted);">—</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ photo.quality_score if photo.quality_score is not none else '—' }}</td>
+                    <td>
+                        {{ photo.model_version or 'unknown' }}
+                        {% if photo.model_version and photo.model_version != current_model_version %}
+                        <span class="status-badge status-late" title="Produced by a different model than the one currently configured">Outdated</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ photo.created_at }}</td>
+                    <td>
+                        <form action="{{ url_for('admin_delete_face_photo', student_id=student.id, embedding_id=photo.id) }}" method="POST" onsubmit="return confirm('Remove this photo?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="button small warning">Remove</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 2rem; color: var(--muted);">No face photos registered yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

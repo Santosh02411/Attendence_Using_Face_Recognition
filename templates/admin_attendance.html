@@ -15,6 +15,7 @@
                 <th>Subject</th>
                 <th>Session</th>
                 <th>Status</th>
+                <th>Confidence</th>
                 <th>Date & Time</th>
             </tr>
         </thead>
@@ -26,14 +27,15 @@
                 <td>{{ record.subject_name }} ({{ record.subject_code }})</td>
                 <td>{{ record.session_title }}</td>
                 <td>
-                    <span class="status-badge {{ 'status-present' if record.status == 'Present' else 'status-absent' }}">
+                    <span class="status-badge {{ 'status-present' if record.status == 'Present' else ('status-late' if record.status == 'Late' else 'status-absent') }}">
                         {{ record.status }}
                     </span>
                 </td>
+                <td>{{ (record.confidence * 100) | round(1) if record.confidence is not none else '—' }}</td>
                 <td>{{ record.timestamp }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="6" style="text-align: center; padding: 2rem; color: var(--muted);">No attendance records found.</td></tr>
+            <tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--muted);">No attendance records found.</td></tr>
             {% endfor %}
         </tbody>
     </table>

@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <h1>Security Dashboard</h1>
+    <p>Trends, risk scores, and alerts over the last {{ window_days }} days.
+        <a href="{{ url_for('security_settings') }}">Configure security policies</a>.</p>
+</div>
+
+<div class="card wide-card">
+    <h2>Security Events by Severity</h2>
+    <div style="display: flex; gap: 1.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+        <span class="status-badge status-present">Low: {{ severity_totals.low }}</span>
+        <span class="status-badge status-late">Medium: {{ severity_totals.medium }}</span>
+        <span class="status-badge status-absent">High: {{ severity_totals.high }}</span>
+        <span class="status-badge status-absent" style="background: #7f1d1d; color: #fecaca;">Critical: {{ severity_totals.critical }}</span>
+    </div>
+    {% if trend %}
+    <div class="trend-chart">
+        {% for point in trend %}
+        <div class="trend-bar-wrap" title="{{ point.label }}: {{ point.low }} low, {{ point.medium }} medium, {{ point.high }} high, {{ point.critical }} critical">
+            <div style="display: flex; flex-direction: column-reverse; align-items: center; height: 130px; justify-content: flex-end;">
+                {% if point.critical %}<div class="trend-bar" style="background: #7f1d1d; height: {{ point.critical * 12 }}px;"></div>{% endif %}
+                {% if point.high %}<div class="trend-bar danger" style="height: {{ point.high * 12 }}px;"></div>{% endif %}
+                {% if point.medium %}<div class="trend-bar warning" style="height: {{ point.medium * 12 }}px;"></div>{% endif %}
+                {% if point.low %}<div class="trend-bar" style="height: {{ point.low * 12 }}px;"></div>{% endif %}
+            </div>
+            <span class="trend-label">{{ point.label[5:] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p>No security events in this window.</p>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Risk Score Leaderboard</h2>
+        <span style="color: var(--muted); font-size: 0.9rem;">Escalation threshold: {{ escalation_threshold }}</span>
+    </div>
+    {% if risk_rows %}
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>Student</th><th>Roll No</th><th>Risk Score</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+                {% for row in risk_rows %}
+                <tr>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.roll_no }}</td>
+                    <td style="min-width: 140px;">
+                        <div class="meter" title="{{ row.score }}/100">
+                            <div class="meter-fill {% if row.score >= escalation_threshold %}danger{% elif row.score >= escalation_threshold // 2 %}warning{% endif %}" style="width: {{ row.score }}%;"></div>
+                        </div>
+                        <span style="font-size: 0.85rem; color: var(--muted);">{{ row.score }}/100</span>
+                    </td>
+                    <td>
+                        {% if row.escalated %}<span class="status-badge status-absent">Escalated</span>{% else %}<span class="status-badge status-present">OK</span>{% endif %}
+                    </td>
+                    <td><a href="{{ url_for('student_security_history', student_id=row.student_id) }}" class="button small">Details</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No students with an elevated risk score.</p>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Notifications</h2>
+        <span style="color: var(--muted); font-size: 0.9rem;">{{ unread_count }} unread</span>
+    </div>
+    {% if notifications %}
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead><tr><th>When</th><th>Severity</th><th>Message</th><th></th></tr></thead>
+            <tbody>
+                {% for n in notifications %}
+                <tr style="{{ 'font-weight: 600;' if not n.is_read else 'opacity: 0.7;' }}">
+                    <td>{{ n.created_at }}</td>
+                    <td>
+                        <span class="status-badge {{ 'status-absent' if n.severity in ('high', 'critical') else 'status-late' }}">{{ n.severity }}</span>
+                    </td>
+                    <td>{{ n.message }}</td>
+                    <td>
+                        {% if not n.is_read %}
+                        <form action="{{ url_for('mark_security_notification_read', notification_id=n.id) }}" method="POST">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="button small secondary">Mark Read</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No notifications yet.</p>
+    {% endif %}
+</div>
+
+<style>
+.trend-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    height: 160px;
+    padding: 0.5rem 0 0;
+    overflow-x: auto;
+}
+.trend-bar-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 28px;
+}
+.trend-bar {
+    width: 18px;
+    background: #10b981;
+    min-height: 2px;
+}
+.trend-bar.warning { background: #f59e0b; }
+.trend-bar.danger { background: #dc2626; }
+.trend-label {
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-top: 0.25rem;
+    white-space: nowrap;
+}
+</style>
+{% endblock %}

@@ -51,7 +51,7 @@ document.getElementById('studentLoginForm').onsubmit = function(e) {
     fetch('/student/login', {
         method: 'POST',
         headers: csrfHeaders({'Content-Type': 'application/json'}),
-        body: JSON.stringify({roll_no: rollNo, password: password, captcha: captcha})
+        body: JSON.stringify({roll_no: rollNo, password: password, captcha: captcha, device_fingerprint: getDeviceFingerprint()})
     })
     .then(r => r.json())
     .then(d => {
