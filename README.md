@@ -10,12 +10,18 @@ A comprehensive attendance management system powered by face recognition technol
 - [Installation](#-installation)
 - [Project Structure](#-project-structure)
 - [How It Works](#-how-it-works)
+- [Anti-Proxy / Face Recognition Security](#️-anti-proxy--face-recognition-security)
+- [Session Management](#-session-management)
+- [Attendance Workflow](#-attendance-workflow)
+- [Face Enrollment & Biometric Management](#-face-enrollment--biometric-management)
+- [Security Monitoring](#️-security-monitoring)
 - [Configuration](#-configuration)
 - [Database Schema](#-database-schema)
 - [User Interface](#-user-interface)
 - [Security Features](#-security-features)
 - [Troubleshooting](#-troubleshooting)
 - [Running Tests](#-running-tests)
+- [Metrics](#-metrics)
 - [Deployment](#-deployment)
 - [Advanced Usage](#-advanced-usage)
 - [Performance Optimization](#-performance-optimization)
@@ -26,14 +32,16 @@ A comprehensive attendance management system powered by face recognition technol
 ## 🚀 Features
 
 - **Face Recognition Attendance**: Automated attendance marking using facial recognition
-- **Admin Dashboard**: Complete control over sessions, students, and attendance records, with quick-action shortcuts and live stats
-- **Student Portal**: Self-service registration, attendance marking, attendance history, and a profile page with account details and self-service password change
-- **Session Management**: Create and manage attendance sessions for different subjects, with automatic overlap detection so two sessions can't double-book the same time window
+- **Admin Dashboard**: Complete control over sessions, students, and attendance records, with quick-action shortcuts, live stats, Low Attendance Alerts, and a Security Alerts widget for repeated spoof/liveness events
+- **Student Portal**: Self-service registration, attendance marking, attendance history (with Present/Late/Absent status and a Request Correction action per session), and a profile page with account details and self-service password change
+- **Session Management**: Create and manage attendance sessions for different subjects, with automatic overlap detection so two sessions can't double-book the same time window, a full status lifecycle (Scheduled → Active → Completed, or → Cancelled), rescheduling, and optional per-session attendance-window/grace-period/network overrides and student-group (branch/semester) assignment — see "Session Management" below
+- **Attendance Workflow**: Present/Absent/Late status, a late-entry rule with a configurable grace period, admin manual editing (add/remove/change, with a reason) and an attendance freeze after a configurable window, a student correction-request workflow with admin approve/reject, and filterable subject/date-range/semester reports with percentage warnings and a trend chart — see "Attendance Workflow" below
+- **Face Enrollment & Biometric Management**: Per-photo enrollment quality scores, an enrollment status (Not Enrolled/Pending/Complete) with automatic re-enrollment reminders, individual photo removal and a full re-enrollment workflow, embedding model versioning, and admin-panel recognition threshold configuration — see "Face Enrollment & Biometric Management" below
+- **Security Monitoring**: Device fingerprinting and suspicious-device detection, concurrent-session and network-change/impossible-location detection, per-student risk scoring with automatic escalation, admin security notifications, Low/Medium/High/Critical severity levels, a security dashboard with trends, and configurable security policies — see "Security Monitoring" below
 - **Real-time Recognition**: Live face detection and recognition during attendance sessions
 - **Bulk Student Import**: Onboard a whole class at once via CSV upload (name/roll number/branch/semester, with auto-generated temporary passwords); each student adds their own face photos afterward
-- **Export Functionality**: Export attendance records as CSV files
-- **Low Attendance Alerts**: Automatic alerts (with a visual meter) for students below a configurable attendance threshold
-- **Admin Account Management**: Add/remove admin accounts, self-service password change, audit log of admin actions
+- **Export Functionality**: Export attendance records, session rosters, and attendance reports as CSV files
+- **Admin Account Management**: Add/remove admin accounts, self-service password change, audit log of admin actions with a Security Events filter
 - **Pagination**: Student lists, attendance records, and the audit log all page through results instead of rendering everything at once
 - **Web Camera Capture**: Uses the browser's webcam (via `getUserMedia`) for face capture — works with whichever camera the browser selects by default; no in-app multi-camera picker
 - **Dark Mode**: Toggleable, persisted per-browser
@@ -118,20 +126,33 @@ A comprehensive attendance management system powered by face recognition technol
 Attendance_Using_Face_Recognition/
 ├── app.py                          # Main Flask application
 ├── config.py                       # Centralized paths, thresholds, and detection tuning
+├── db_migrations.py                 # Runs Alembic migrations against database/app.db — see "Database Migrations"
+├── alembic.ini                     # Alembic configuration (script location; sqlalchemy.url set at runtime)
+├── migrations/                     # Alembic migration environment
+│   ├── env.py                     # Alembic runtime environment
+│   ├── script.py.mako              # Template for new migration files
+│   └── versions/                   # Ordered migration scripts (schema history)
+├── backup.py                       # Creates a timestamped backup of the DBs + face images — see "Backup & Restore"
+├── restore.py                      # Restores a backup.py archive back into place
+├── logging_config.py               # Structured (JSON) logging + request-id plumbing — see "Structured Logging"
+├── error_reporting.py              # Optional Sentry integration — see "Error Alerting"
+├── face_security.py                 # Active liveness challenges + anti-spoof heuristics — see "Anti-Proxy / Face Recognition Security"
 ├── wsgi.py                         # Production WSGI entrypoint (gunicorn/waitress) — see "Deployment"
-├── gunicorn.conf.py                # Gunicorn server tuning (workers, timeouts, logging)
+├── gunicorn.conf.py                # Gunicorn server tuning (workers, timeouts, JSON logging)
 ├── healthcheck.py                  # Standalone HTTP healthcheck probe, used by Docker HEALTHCHECK
 ├── migrate_embeddings.py           # One-time backfill for pre-embedding registrations
 ├── reset_admin_password.py         # CLI recovery tool if the admin account gets locked out
 ├── requirements.txt                # Python dependencies
-├── requirements-dev.txt            # + pytest, for running the test suite
-├── requirements-prod.txt           # + gunicorn, for running in production (Linux/macOS/Docker)
+├── requirements-dev.txt            # + pytest, ruff, mypy, pip-audit — for tests/lint/type-check/security scan
+├── requirements-prod.txt           # + gunicorn, sentry-sdk, for running in production (Linux/macOS/Docker)
+├── pyproject.toml                  # ruff + mypy configuration — see "Lint & type-check gate"
 ├── pytest.ini                      # pytest configuration
 ├── .env.example                    # Template for local environment overrides
 ├── Dockerfile                      # Production container image (gunicorn + non-root user)
 ├── docker-compose.yml              # Local/production container run, with persistent volumes
 ├── .dockerignore                   # Files excluded from the Docker build context
-├── .github/workflows/ci.yml        # GitHub Actions: runs the test suite on every push/PR
+├── .github/workflows/ci.yml        # GitHub Actions: tests, lint/type-check, and dependency scan on every push/PR
+├── .github/dependabot.yml          # Weekly pip + GitHub Actions dependency update PRs
 ├── haarcascade_frontalface_default.xml  # Face detection cascade file
 ├── models/                         # Pretrained face embedding model
 │   ├── openface_nn4.small2.v1.t7  # OpenFace CNN (128-d embeddings)
@@ -198,18 +219,384 @@ Attendance_Using_Face_Recognition/
 - Self-service attendance marking does 1:1 verification (compare only
   against the logged-in student's own stored embeddings); the admin live
   session view does 1:N identification (compare against everyone)
-- A multi-signal liveness check runs before matching: pixel motion across
-  a burst of frames, plus (if enabled) a detectable blink — see
-  `config.LIVENESS_CHECK_ENABLED` / `LIVENESS_REQUIRE_BLINK`, and the
-  honest caveats in `config.py` about what this can and can't catch (a
-  prepared video replay containing a blink at the right moment could
-  still pass)
+- A multi-signal liveness pipeline runs before matching: passive checks
+  (pixel motion across a burst of frames, plus — if enabled — a
+  detectable blink), a randomized active challenge (blink / turn your
+  head / nod — a different one picked at random each attempt), and a
+  heuristic screen/print replay detector — see "Anti-Proxy / Face
+  Recognition Security" below for what each layer catches and its honest
+  limits
 - Registration photos are quality-checked (blur, brightness) before being
   turned into an embedding — a bad photo is skipped, not silently stored
-  (see `IMAGE_QUALITY_CHECK_ENABLED`)
+  (see `IMAGE_QUALITY_CHECK_ENABLED`); the same check now also runs on
+  self-service attendance-marking captures, not just registration
 - Self-service attendance marking can optionally be restricted to an IP
   allowlist (see `ATTENDANCE_ALLOWED_NETWORKS`) — not GPS-based
   geofencing, but a practical network-level restriction
+
+## 🛡️ Anti-Proxy / Face Recognition Security
+
+"Proxy attendance" — someone marking attendance on behalf of a person who
+isn't actually there — is the central threat model for this feature set.
+Three independent layers work together against it, each catching a
+different kind of attempt:
+
+### 1. Active liveness challenge (the main defense against a video replay)
+
+The older passive check (motion across a frame burst, plus a detectable
+blink) has an honest weakness: a **pre-recorded video** of the real
+person, played back to the camera, already contains natural motion and
+probably a blink somewhere in it — so it can pass a purely passive check.
+
+To close that gap, the server now picks **one random challenge** right
+before each capture starts — `blink`, `head_turn`, or `head_nod` (see
+`ACTIVE_LIVENESS_CHALLENGE_TYPES`) — and the captured burst must actually
+show that specific action happening:
+
+1. `GET /student/liveness-challenge` picks a random challenge, stores it
+   server-side (session-bound, single-use, expires after
+   `ACTIVE_LIVENESS_CHALLENGE_TTL_SECONDS`), and returns a token plus an
+   on-screen prompt ("Slowly turn your head to one side and back", etc.)
+2. The student performs the action while `student_attend.html` captures
+   the frame burst.
+3. `POST /student/attend/mark` is sent the same token; the server looks
+   up what it actually issued (never trusts a client-reported challenge
+   type), verifies the requested motion happened
+   (`face_security.verify_challenge_response`), and — regardless of the
+   outcome — consumes the token so it can never be reused.
+
+A fixed pre-recorded clip would need to happen to contain the
+randomly-chosen action at the right moment, for whichever of several
+possible challenges gets picked, which a simple loop can't guarantee.
+`head_turn`/`head_nod` are verified by tracking how much the detected
+face box's center moves between frames — deliberately direction-agnostic
+(either left or right satisfies `head_turn`) since the raw captured frame
+isn't mirrored the way the on-screen preview is, so specifying "must
+turn left" vs. "right" would depend on camera setup in a confusing way.
+
+Toggle with `ACTIVE_LIVENESS_ENABLED` (default on). See `face_security.py`
+for the implementation and `config.py`'s `ACTIVE_LIVENESS_*` comments for
+the full reasoning and tuning knobs.
+
+### 2. Screen/print replay detection (the main defense against "hold a phone up to the camera")
+
+`face_security.compute_screen_replay_score()` is a heuristic, frequency-
+domain check: a phone/tablet/monitor screen, photographed by another
+camera, produces a periodic pixel-grid pattern ("moire") that shows up as
+unusually strong, spatially periodic peaks in the image's 2D FFT
+magnitude spectrum. A real face's spectrum is comparatively smooth. The
+score is the strongest such peak's energy divided by the surrounding
+band's average — high means "looks like a screen".
+
+Worth knowing about this specific heuristic: ordinary **JPEG compression
+itself** introduces periodic 8x8 block artifacts, which could otherwise
+look like screen-grid periodicity — the check deliberately excludes the
+pure horizontal/vertical frequency axes (where JPEG blocking
+concentrates almost entirely) from its analysis, and the default
+threshold (`ANTI_SPOOF_MAX_PERIODICITY_RATIO`, 30.0) was calibrated with
+real synthetic tests to sit well above what even heavily-compressed
+ordinary photos produce, while staying far below genuine screen-replay
+territory (typically in the hundreds) — see the comment on that setting
+in `config.py` and `tests/test_face_security.py` for the numbers behind
+that choice.
+
+Applied at three points: student self-service attendance marking,
+registration (a spoofed photo is rejected rather than silently added to
+someone's face gallery), and the admin kiosk recognition endpoint.
+Toggle with `ANTI_SPOOF_ENABLED` (default on).
+
+**Honest limits**: this catches a screen replay specifically — it has no
+real signal against a good-quality *printed* photo (no screen grid to
+detect). The registration/attendance-marking blur-brightness quality
+gate (`IMAGE_QUALITY_CHECK_ENABLED`, now applied at attendance-marking
+time too, not just registration) is the closest thing to a defense
+there, since a re-photographed print is often noticeably softer than a
+direct live capture — but it's not a dedicated print-detection check.
+
+### 3. Motion-based liveness for the admin kiosk view
+
+The admin-supervised live session view (`/admin/session/<id>/recognize`)
+previously ran recognition against a single static image with no
+liveness signal of any kind — a photo held up to the camera would have
+been recognized. It now optionally accepts a second, previous frame
+(`image_prev`) from the same live feed and requires actual pixel motion
+between the two before running recognition at all — the same underlying
+`check_liveness()` used elsewhere, applied here as a lighter-weight check
+appropriate for an admin-supervised setting rather than the fuller active
+challenge used for unsupervised self-service marking.
+
+### 4. Ensemble embedding matching (accuracy, not just anti-proxy)
+
+`find_best_match()` can average a candidate's top-`MATCH_TOP_K` closest
+stored embeddings instead of just taking the single closest one —
+reducing how much one unusually good (for an impostor) or unusually poor
+(for the genuine student) stored photo affects the outcome. Off by
+default (`MATCH_TOP_K=1`, an exact no-op matching prior behavior) because
+averaging generally shifts similarity scores downward, which typically
+needs the match thresholds re-tuned for your own registered photos — see
+the setting's comment in `config.py`.
+
+### 5. Attendance-marking abuse lockout (closing the "retry forever" gap)
+
+Every spoof-suspected or failed-liveness-challenge attempt above was
+already written to the audit log — but on its own, that's just a record;
+nothing stopped someone from retrying indefinitely. `student_id`-scoped
+lockout closes that gap: `ATTENDANCE_LOCKOUT_MAX_FAILED_ATTEMPTS`
+consecutive failures (default 5) lock that account out of marking
+attendance for `ATTENDANCE_LOCKOUT_DURATION_MINUTES` (default 30), with
+its own `attendance_security_lockout` audit event so it's clearly
+flagged rather than blending into the rest of the log. Deliberately
+narrow: an ordinary "face not recognized" miss (bad lighting, a stale
+photo) never counts — only the two anti-proxy checks above do, and a
+genuine successful mark resets the counter. An admin can lift a lockout
+early from `/admin/students` ("Clear Lock"), since a flaky camera can
+trip this too, not just an actual proxy attempt.
+
+The admin dashboard's **Security Alerts** widget and the audit log's
+**Security Events** filter (`/admin/audit-log?filter=security`) both
+build on this — see "Security Features" below.
+
+## 📅 Session Management
+
+Beyond creating sessions and detecting time-overlap conflicts:
+
+- **Status lifecycle** — every session is `scheduled` → `active` →
+  `completed`, or → `cancelled`. This sits alongside the original
+  `active` flag (which stays the source of truth for "can attendance be
+  marked right now") rather than replacing it, so it adds richer states
+  (distinguishing "hasn't started yet" from "already finished", and
+  cancellation as its own explicitly-blocked state) without changing
+  how anything that already read `active` behaves.
+- **Cancellation** (`/admin/session/<id>/cancel`) — records a reason,
+  blocks attendance marking with its own explicit message, and frees up
+  its time slot for overlap detection (a cancelled session never
+  happened, so it can't conflict with a new one).
+- **Rescheduling** (`/admin/session/<id>/reschedule`) — changes a
+  session's date/time, reusing the same overlap check as creating a new
+  one, and revives a cancelled session back to `scheduled`. A
+  `completed` session can't be rescheduled — attendance has already
+  happened for it; create a new session instead.
+- **Per-session attendance window & grace period** — `Attendance window
+  (minutes)` and `Grace period (minutes)`, set per-session under
+  "Advanced" when creating one, override the global
+  `LATE_ENTRY_LATE_WINDOW_MINUTES`/`LATE_ENTRY_GRACE_MINUTES` for just
+  that session. Unset (the default) falls back to the global config.
+- **Per-session network restriction** — a session's own `Allowed
+  networks` list *replaces* the global `ATTENDANCE_ALLOWED_NETWORKS` for
+  that one session (stricter or looser, either direction), rather than
+  adding to it.
+- **Student-group assignment** — `Restrict to branch` / `Restrict to
+  semester` limit a session to one group of students. Neither set (the
+  default) keeps a session open to everyone, unchanged from before this
+  existed. Enforced server-side at marking time (not just hidden from
+  the session list) and reflected in the per-session attendance
+  summary's totals.
+- **Attendance summary** — the session detail page and its
+  auto-refreshing `/admin/session/<id>/attendance-data` endpoint show
+  Present/Late/Absent counts (scoped to the session's assigned group, if
+  any) plus a Failed Attempts count pulled from the audit log's
+  spoof-suspected/liveness-challenge-failed events for that session.
+- **Real-time updates** — the session-monitor page long-polls
+  `/admin/session/<id>/updates` for near-instant refreshes when a
+  student marks attendance, rather than waiting for its periodic poll.
+  Deliberately long-polling instead of a persistent SSE/websocket
+  stream: this app runs under gunicorn's sync worker model (see
+  `gunicorn.conf.py`), where an indefinitely-open stream would tie up an
+  entire worker for as long as an admin keeps that tab open. Each
+  long-poll cycle instead blocks for at most
+  `REALTIME_LONGPOLL_TIMEOUT_SECONDS` (default 8) and always returns
+  fresh data regardless of why it woke up, so correctness doesn't depend
+  on the update signal actually being seen — though with multiple
+  gunicorn worker *processes* (the default), a change handled by one
+  worker won't wake a long-poll parked in another; that request just
+  waits out its timeout and returns current data anyway (correct, just
+  not instant). A slower interval poll remains as a safety net, and
+  `REALTIME_UPDATES_ENABLED=0` disables long-polling entirely if
+  preferred. Don't open more concurrent session-monitor tabs than you
+  have spare `GUNICORN_WORKERS`.
+- **Automatic closing after the attendance window** — once an `active`
+  session's attendance window has fully elapsed, it's moved to
+  `completed` automatically (`SESSION_AUTO_CLOSE_ENABLED`, on by
+  default) — checked both lazily on the hot marking path (so a stale
+  session is caught immediately) and swept in bulk whenever a
+  session-listing page loads. There's no background scheduler in this
+  project (see "What this project does *not* provide" below), so this
+  is deliberately request-triggered rather than time-triggered.
+
+## 📈 Attendance Workflow
+
+- **Present / Absent / Late status** — a self-service mark can be
+  `Present` or `Late` (see the late-entry rule below); `Absent` is shown
+  wherever a student has no attendance row for a past session, without
+  needing a row inserted for every miss.
+- **Late-entry rule** — off by default (`LATE_ENTRY_ENFORCEMENT_ENABLED`,
+  since it only makes sense once sessions carry real-world start times):
+  when on, marking within `LATE_ENTRY_GRACE_MINUTES` of a session's
+  scheduled start is `Present`; within the following
+  `LATE_ENTRY_LATE_WINDOW_MINUTES` it's `Late`; beyond that, self-service
+  marking is refused outright (the student needs an admin override or an
+  approved correction request). Whether `Late` counts the same as
+  `Present` toward a percentage is `LATE_COUNTS_AS_PRESENT` (default on).
+- **Admin manual editing** (`/admin/session/<id>/override`) — set a
+  student's status to Present/Late/Absent, or clear their record back to
+  "Not Marked", always with an optional reason recorded in both the
+  attendance row's note and the audit log.
+- **Attendance freeze** — once a session is more than
+  `ATTENDANCE_EDIT_LOCK_DAYS` old (default 30), its attendance record
+  becomes read-only: no further admin override, and no new student
+  correction request for it. There's deliberately no "unlock" endpoint.
+- **Correction requests** — a student who believes their attendance for
+  a session is wrong can file a request (with a reason) from
+  `/student/history`; an admin approves or rejects it from
+  `/admin/attendance/corrections`. Approving applies the requested
+  status the same way a manual override would. Blocked by the same
+  freeze window as a direct override.
+- **Reports** (`/admin/reports`) — one filterable report (subject,
+  semester, and/or date range) rather than four separate pages, showing
+  each student's session count / Present / Late / Absent / percentage,
+  with rows below `LOW_ATTENDANCE_THRESHOLD_PERCENT` highlighted, a
+  daily/weekly/monthly attendance-rate trend chart, and a CSV export
+  that respects the same filters.
+- **Duplicate-marking prevention** — enforced at the application layer
+  (an early check before any face-processing work runs), hardened with
+  an atomic `INSERT ... WHERE NOT EXISTS` to close the narrow race
+  between that check and the actual insert. No hard database `UNIQUE`
+  constraint on `(student_id, session_id)`, since the `attendance` table
+  is also used, deliberately, as an append-only per-mark log in a couple
+  of places.
+
+## 🧬 Face Enrollment & Biometric Management
+
+- **Enrollment quality score** — every registered photo gets a 0-100
+  heuristic score (`_compute_quality_score()`) from the same sharpness
+  (Laplacian variance) and exposure (mean brightness) signals as the
+  pass/fail quality gate at capture time, but continuous rather than
+  binary. Shown per-photo on both the student's and admin's face-photos
+  pages.
+- **Enrollment status** — every student is `Not Enrolled` (zero photos),
+  `Pending` (fewer than `ENROLLMENT_MIN_PHOTOS`, or below-threshold
+  average quality — see `ENROLLMENT_QUALITY_REENROLL_THRESHOLD`), or
+  `Complete`. Shown on the admin student list, the admin/student
+  face-photos pages, and the student's own profile.
+- **Remove individual photos** — `/student/face-photos` (self-service)
+  and `/admin/student/<id>/face-photos` (admin) list every registered
+  photo with a thumbnail, its quality score, and a Remove button —
+  deletes that one `face_embeddings` row and its underlying image file,
+  distinct from wiping everything.
+- **Face re-enrollment/update workflow** — `/student/reenroll` (or the
+  admin's "Reset Face Data") wipes ALL of a student's existing face data
+  and sends them to recapture from scratch, for when adding a few more
+  photos to an already-weak gallery isn't enough (a materially changed
+  appearance, or persistently poor quality).
+- **Automatic re-enrollment reminders** — no email/SMS in this project
+  (a documented trade-off), so the reminder is in-app: a banner on the
+  student's own profile once their status is `Pending`, and an
+  **Enrollment Reminders** widget on the admin dashboard listing
+  affected students, both driven by the same enrollment-status logic.
+- **Embedding versioning** — every stored embedding is tagged with
+  `EMBEDDER_MODEL_VERSION` (a label you bump when you change
+  `EMBEDDER_MODEL_PATH` or the input size). `/admin/recognition-settings`
+  shows a breakdown of stored embeddings by model version, flagging any
+  that don't match the currently-configured model as `Outdated` — since
+  embeddings from different model weights aren't directly comparable.
+- **Recognition model/configuration management & threshold
+  configuration from the admin panel** — `/admin/recognition-settings`
+  shows the effective model config (path, input size, ensemble
+  `MATCH_TOP_K`) and feature toggles (read-only — those touch enough
+  other code paths that they stay environment-configured), plus five
+  numeric thresholds (`RECOGNIZE_MATCH_THRESHOLD`,
+  `MARK_ATTENDANCE_MATCH_THRESHOLD`, `DUPLICATE_FACE_MATCH_THRESHOLD`,
+  `ANTI_SPOOF_MAX_PERIODICITY_RATIO`, `IMAGE_QUALITY_MIN_LAPLACIAN_VARIANCE`)
+  that ARE editable right there, saved to a small `app_settings` table
+  and taking effect immediately — no restart needed. Each can be reset
+  back to its `.env`/`config.py` default individually.
+- **Recognition confidence reporting** — every Present/Late mark
+  (self-service and kiosk) now records the match similarity score
+  (`attendance.confidence`), surfaced in the admin attendance-records
+  browser and in both CSV exports.
+- **Unknown-face detection/reporting** — when the admin-supervised kiosk
+  (`/admin/session/<id>/recognize`) detects a face but it doesn't match
+  anyone in the gallery well enough, that's logged as a distinct
+  `unknown_face_detected` audit event (with the best similarity it did
+  find) — different from a plain detection failure, and picked up by
+  the audit log's Security Events filter.
+- **Face enrollment audit trail** — registration, adding photos, removing
+  a photo, re-enrollment, admin face-data resets, and recognition-
+  settings changes are all logged to the audit log with their actor.
+
+## 🕵️ Security Monitoring
+
+Everything here is heuristic signal built entirely from data this app
+already has (IPs, user agents, its own audit log) — there is no
+third-party fingerprinting or GeoIP service involved, and that's stated
+plainly in each feature below rather than oversold.
+
+- **Device/browser fingerprinting** — a lightweight, self-hosted
+  fingerprint computed client-side (`getDeviceFingerprint()` in
+  `static/app.js`, hashing user agent/screen/timezone/language signals),
+  sent with student login. Not a commercial-grade fingerprinting
+  library, and best-effort: a client that blocks it just means this
+  signal is skipped for that login, nothing fails.
+- **Suspicious-device detection** — a login from a fingerprint never
+  seen before for that student, when they already have at least one
+  other known device on file, logs `suspicious_device_detected` (their
+  very first-ever device is never flagged) and raises a High-severity
+  notification.
+- **Concurrent-session detection** — a second active login (no logout
+  recorded, last active within `CONCURRENT_SESSION_WINDOW_MINUTES`) from
+  a different device or IP than an already-active session for the same
+  student logs `concurrent_session_detected` and a High-severity
+  notification. Re-logging in from the same device isn't flagged.
+- **Impossible-location/network-change detection** — an IP-address
+  heuristic only (there's no bundled GeoIP database, so it cannot
+  measure true physical distance): a login from a different network
+  than the student's last one, within `NETWORK_CHANGE_WINDOW_MINUTES`,
+  logs `network_change_detected` (Medium); within the tighter
+  `NETWORK_CHANGE_IMPOSSIBLE_MINUTES` specifically, it's
+  `impossible_location_suspected` (Critical) instead, with its own
+  notification.
+- **IP/device history per student** — `/admin/student/<id>/security-history`
+  lists every device fingerprint seen for them (first/last seen, times
+  seen), their recent login sessions with IPs, and their recent
+  security-relevant audit events.
+- **Security risk score per student** — a 0-100 score
+  (`_compute_risk_score()`) from weighted counts of a student's security
+  events (spoof attempts, suspicious devices, concurrent sessions,
+  network changes, etc.) over `SECURITY_RISK_WINDOW_DAYS` — a rough
+  signal for review, not a certainty. Shown on the security dashboard's
+  leaderboard and the student's security-history page, with a
+  point-by-point breakdown.
+- **Automatic escalation of high-risk accounts** — a score at or above
+  `SECURITY_RISK_ESCALATION_THRESHOLD` automatically escalates the
+  student, blocking their attendance marking the same way the
+  spoof/liveness lockout does (see "Anti-Proxy / Face Recognition
+  Security"), until an admin reviews and explicitly clears it
+  (`/admin/student/<id>/clear-escalation`) — a broader, longer-lived
+  flag than that narrower lockout counter.
+- **Admin security alert notifications** — no email/SMS in this project
+  (a documented trade-off), so the higher-severity events above
+  (suspicious device, concurrent session, impossible location,
+  escalation) raise an in-app notification, shown on the security
+  dashboard as a read/unread feed.
+- **Security event severity levels** — Low/Medium/High/Critical,
+  computed by action name (`event_severity()`) rather than stored per
+  row, so every event — including ones logged before this feature
+  existed — gets a consistent severity. Shown throughout the audit log,
+  security-history pages, and the security dashboard.
+- **Security dashboard with trends** — `/admin/security-dashboard`:
+  daily security-event counts stacked by severity, a risk-score
+  leaderboard (top 10), and the notification feed, all over the same
+  `SECURITY_ALERT_WINDOW_DAYS` window as the existing dashboard widget.
+- **Repeated failed-attempt analytics** — the trend chart above and each
+  student's risk-score breakdown are, together, this: a view of how
+  failed/suspicious attempts cluster over time and per student, without
+  a separate dedicated analytics page.
+- **Configurable security policies from the admin panel** —
+  `/admin/security-settings` edits `SECURITY_RISK_ESCALATION_THRESHOLD`,
+  `CONCURRENT_SESSION_WINDOW_MINUTES`, `NETWORK_CHANGE_WINDOW_MINUTES`,
+  and `NETWORK_CHANGE_IMPOSSIBLE_MINUTES` at runtime — the same
+  DB-backed override mechanism as `/admin/recognition-settings`, no
+  restart needed, each individually resettable to its `.env` default.
 
 ## 🔧 Configuration
 
@@ -242,6 +629,20 @@ Also in `config.py` / `.env.example`:
   `RATE_LIMIT_ENABLED`, `RATE_LIMIT_STORAGE_URI`
 - **Account lockout**: `LOCKOUT_MAX_FAILED_ATTEMPTS` (default 5),
   `LOCKOUT_DURATION_MINUTES` (default 15)
+- **Attendance-marking abuse lockout**:
+  `ATTENDANCE_LOCKOUT_MAX_FAILED_ATTEMPTS` (default 5),
+  `ATTENDANCE_LOCKOUT_DURATION_MINUTES` (default 30) — see "Anti-Proxy /
+  Face Recognition Security"
+- **Security-event dashboard**: `SECURITY_ALERT_WINDOW_DAYS` (default 7)
+- **Security monitoring**: `SECURITY_RISK_WINDOW_DAYS` (default 30),
+  `SECURITY_RISK_ESCALATION_THRESHOLD` (default 60),
+  `CONCURRENT_SESSION_WINDOW_MINUTES` (default 15),
+  `NETWORK_CHANGE_WINDOW_MINUTES` (default 60),
+  `NETWORK_CHANGE_IMPOSSIBLE_MINUTES` (default 5) — see "Security
+  Monitoring". The last four are also editable at runtime from
+  `/admin/security-settings`.
+- **Observability**: `METRICS_ENABLED` (default on), `METRICS_AUTH_TOKEN`
+  (unset by default) — see "Metrics"
 - **CAPTCHA**: `CAPTCHA_ENABLED`, `CAPTCHA_LENGTH`
 - **Password policy**: `PASSWORD_MIN_LENGTH`,
   `PASSWORD_REQUIRE_LETTER_AND_DIGIT`
@@ -250,6 +651,16 @@ Also in `config.py` / `.env.example`:
   `MAX_REGISTRATION_IMAGES`, `MAX_IMAGE_BASE64_CHARS`
 - **Liveness/blink**: `LIVENESS_FRAME_COUNT` (default 5),
   `LIVENESS_REQUIRE_BLINK`
+- **Active liveness challenge**: `ACTIVE_LIVENESS_ENABLED`,
+  `ACTIVE_LIVENESS_CHALLENGE_TYPES`, `ACTIVE_LIVENESS_CHALLENGE_TTL_SECONDS`,
+  `ACTIVE_LIVENESS_HEAD_TURN_MIN_SHIFT_RATIO`,
+  `ACTIVE_LIVENESS_HEAD_NOD_MIN_SHIFT_RATIO` — see "Anti-Proxy / Face
+  Recognition Security" below
+- **Anti-spoof (screen/print replay) detection**: `ANTI_SPOOF_ENABLED`,
+  `ANTI_SPOOF_MAX_PERIODICITY_RATIO`
+- **Ensemble embedding matching**: `MATCH_TOP_K` (default 1 = unchanged
+  single-best-embedding behavior; see the setting's comment in
+  `config.py` before raising it)
 - **Multi-face handling**: `REJECT_MULTIPLE_FACES`
 - **Registration photo quality**: `IMAGE_QUALITY_CHECK_ENABLED`,
   `IMAGE_QUALITY_MIN_LAPLACIAN_VARIANCE`, `IMAGE_QUALITY_MIN_BRIGHTNESS`,
@@ -261,24 +672,76 @@ Also in `config.py` / `.env.example`:
 Also in `config.py` / `.env.example`:
 - **Session overlap checking**: `ALLOW_OVERLAPPING_SESSIONS` (default
   off — overlapping sessions are blocked)
+- **Automatic session closing**: `SESSION_AUTO_CLOSE_ENABLED` (default
+  on) — see "Session Management"
+- **Real-time updates**: `REALTIME_UPDATES_ENABLED` (default on),
+  `REALTIME_LONGPOLL_TIMEOUT_SECONDS` (default 8) — see "Session
+  Management"
+- **Attendance rules**: `LATE_ENTRY_ENFORCEMENT_ENABLED` (default off),
+  `LATE_ENTRY_GRACE_MINUTES` (10), `LATE_ENTRY_LATE_WINDOW_MINUTES` (20),
+  `LATE_COUNTS_AS_PRESENT` (default on), `ATTENDANCE_EDIT_LOCK_ENABLED`
+  (default on), `ATTENDANCE_EDIT_LOCK_DAYS` (30),
+  `CORRECTION_REASON_MAX_LENGTH` (500) — see "Attendance Workflow"
 - **Pagination**: `STUDENTS_PER_PAGE` (25), `AUDIT_LOG_PER_PAGE` (50),
   `ATTENDANCE_RECORDS_PER_PAGE` (50)
 - **Bulk import**: `MAX_BULK_IMPORT_ROWS` (500 rows per CSV)
+- **Face enrollment**: `EMBEDDER_MODEL_VERSION`, `ENROLLMENT_MIN_PHOTOS`
+  (3), `ENROLLMENT_QUALITY_REENROLL_THRESHOLD` (50.0) — see "Face
+  Enrollment & Biometric Management". `RECOGNIZE_MATCH_THRESHOLD`,
+  `MARK_ATTENDANCE_MATCH_THRESHOLD`, `DUPLICATE_FACE_MATCH_THRESHOLD`,
+  `ANTI_SPOOF_MAX_PERIODICITY_RATIO`, and
+  `IMAGE_QUALITY_MIN_LAPLACIAN_VARIANCE` (all listed above) can
+  additionally be overridden at runtime from
+  `/admin/recognition-settings`, which takes precedence over these.
+
+### Operations Settings
+Also in `config.py` / `.env.example` — see "Structured Logging", "Error
+Alerting", and "Backup & Restore" below for the full picture:
+- **Logging**: `LOG_LEVEL` (default `INFO`), `LOG_FORMAT` (`json` default
+  or `plain`)
+- **Error alerting**: `SENTRY_DSN` (unset = disabled), `SENTRY_ENVIRONMENT`,
+  `SENTRY_TRACES_SAMPLE_RATE`
+- **Backups**: `BACKUP_DIR` (default `./backups`), `BACKUP_RETENTION_COUNT`
+  (default 14, `0` = keep forever)
 
 ## 📊 Database Schema
 
 ### Main Tables
 - **admins**: Administrator credentials, plus lockout tracking
   (`failed_attempts`, `locked_until`)
-- **students**: Student information and credentials, plus the same
-  lockout tracking
+- **students**: Student information and credentials, plus login lockout
+  tracking (`failed_attempts`, `locked_until`), attendance-marking
+  abuse lockout tracking (`attendance_security_failures`,
+  `attendance_locked_until`), and security monitoring state
+  (`last_login_ip`, `last_login_at`, `security_escalated`,
+  `security_escalated_at`) — see "Security Monitoring"
 - **subjects**: Subject/course information
-- **sessions**: Attendance session details
-- **attendance**: Attendance records with timestamps
+- **sessions**: Attendance session details, plus lifecycle (`status`,
+  `cancelled_at`, `cancellation_reason`) and optional per-session
+  overrides (`attendance_window_minutes`, `grace_period_minutes`,
+  `allowed_networks`, `restrict_branch`, `restrict_semester`) — see
+  "Session Management"
+- **attendance**: Attendance records with timestamps, a status
+  (`Present`/`Absent`/`Late`), and a recognition-confidence score
+- **attendance_correction_requests**: Student-filed requests to correct
+  an attendance record, with the admin's resolution — see "Attendance
+  Workflow"
 - **face_embeddings**: One row per registered face image (128-d vector,
-  linked to a student)
-- **audit_log**: Timestamped record of logins, lockouts, and
-  admin-initiated changes
+  linked to a student), plus its saved image filename, a 0-100
+  enrollment quality score, and the embedding-model version that
+  produced it — see "Face Enrollment & Biometric Management"
+- **app_settings**: Generic key/value store backing runtime overrides of
+  recognition thresholds and security policies from
+  `/admin/recognition-settings` and `/admin/security-settings`
+- **device_fingerprints**: One row per (student, device) pairing seen at
+  login — see "Security Monitoring"
+- **student_login_sessions**: One row per student login, used only to
+  detect a second concurrently-active login for the same student
+- **security_notifications**: Admin-facing alerts for higher-severity
+  security events, read/unread like an inbox
+- **audit_log**: Timestamped record of logins, lockouts, spoof/liveness
+  events, session lifecycle changes, face-enrollment changes,
+  device/network/session anomalies, and admin-initiated changes
 
 ### Face Recognition Tables
 - **people**: Face profile information linked to student IDs
@@ -286,30 +749,60 @@ Also in `config.py` / `.env.example`:
 ## 🎨 User Interface
 
 ### Admin Features
-- Dashboard with attendance statistics, quick-action shortcuts, and a
-  low-attendance meter per student
+- Dashboard with attendance statistics, quick-action shortcuts, a
+  low-attendance meter per student, a Security Alerts widget for
+  repeated spoof/liveness events, and an Enrollment Reminders widget
+  for incomplete/poor-quality face enrollment
 - Student management (searchable, paginated), including resetting a
-  student's password
+  student's password, clearing an attendance-marking lockout or a
+  security escalation, and managing/resetting their face enrollment
 - Bulk student import via CSV, with a downloadable template and a
   per-row results summary (created / skipped, with reasons)
-- Session creation and management, with automatic time-conflict detection
-- Live attendance monitoring
-- Full paginated attendance record browser, plus CSV export
+- Session creation and management, with automatic time-conflict
+  detection, a status lifecycle (Scheduled/Active/Completed/Cancelled),
+  cancellation and rescheduling, and optional per-session
+  attendance-window/network overrides and student-group assignment
+- Live attendance monitoring, with a Present/Late/Absent/Failed-Attempts
+  summary per session
+- Full paginated attendance record browser (with recognition confidence), plus CSV export
+- Manual attendance editing (add/remove/change, with a reason) and a
+  correction-request review queue (approve/reject)
+- Filterable attendance reports (subject/date-range/semester) with
+  percentage warnings, a trend chart, and CSV export
 - Low attendance alerts
+- Face enrollment management per student: view/remove individual
+  registered photos with their quality score, see which embedding model
+  version produced each, and reset a student's face data entirely
+- Recognition model/configuration management and threshold configuration
+  (`/admin/recognition-settings`) — view effective recognition config
+  and edit the numeric match/quality thresholds without restarting
+- Security dashboard (`/admin/security-dashboard`) with an event-severity
+  trend chart, a per-student risk-score leaderboard, and a notification
+  feed; per-student IP/device history and risk breakdown
+  (`/admin/student/<id>/security-history`); and configurable security
+  policies (`/admin/security-settings`) — see "Security Monitoring"
 - Admin account management (add/remove admin accounts, change your own password)
-- Paginated audit log of logins and admin-initiated changes
+- Paginated audit log of logins, lockouts, face-enrollment changes,
+  device/network/session anomalies, and admin-initiated changes, with a
+  Security Events filter and Low/Medium/High/Critical severity levels
 
 ### Student Features
 - Self-registration with face capture
 - Login with credentials
-- Profile page: account details, registered-photo count, attendance
-  summary with a visual meter, and self-service password change
+- Profile page: account details, enrollment status, registered-photo
+  count, attendance summary with a visual meter, self-service password
+  change, and a re-enrollment reminder when quality is low
 - Add face photos after the fact (`/student/register-face`) — for
   accounts created via admin bulk import, which don't capture a face at
   creation time
-- View attendance history
+- View, and individually remove, their own registered face photos
+  (`/student/face-photos`), or wipe all of them to re-enroll from scratch
+- View attendance history, including Present/Late/Absent status for
+  every session (not just ones they were marked for)
 - Mark attendance for active sessions
-- Attendance percentage calculation
+- Attendance percentage calculation, with a banner on their profile/history if it's below the low-attendance threshold
+- File a correction request for a session they believe is recorded
+  wrong, and track its approve/reject status
 
 ## 🔒 Security Features
 
@@ -324,12 +817,18 @@ Also in `config.py` / `.env.example`:
   password come from environment variables / `.env`, not hardcoded
 - **Face recognition validation** — cosine-similarity matching against
   stored embeddings, only one face permitted in frame
-  (`REJECT_MULTIPLE_FACES`), plus a two-signal liveness check (pixel
-  motion across a frame burst, and — if enabled — a detectable blink; see
-  `config.LIVENESS_CHECK_ENABLED` / `LIVENESS_REQUIRE_BLINK`) to make
-  casual photo/screen spoofing harder
+  (`REJECT_MULTIPLE_FACES`), a two-signal passive liveness check (pixel
+  motion across a frame burst, and — if enabled — a detectable blink),
+  PLUS a randomized active liveness challenge and a heuristic
+  screen/print replay detector — see "Anti-Proxy / Face Recognition
+  Security" below for the full picture
 - **Network restriction for attendance marking** — optional IP allowlist
-  (`ATTENDANCE_ALLOWED_NETWORKS`); unconfigured by default
+  (`ATTENDANCE_ALLOWED_NETWORKS`); unconfigured by default, and
+  overridable per-session (see "Session Management" above)
+- **Attendance-marking abuse lockout** — repeated spoof-suspected /
+  failed-liveness-challenge attempts on one account lock it out of
+  marking attendance for a configurable period, distinct from the login
+  lockout below — see "Anti-Proxy / Face Recognition Security" above
 - **Rate limiting** (Flask-Limiter) on admin and student login, per IP —
   see `RATE_LIMIT_*` in `config.py`
 - **Account lockout** — an account locks itself out for a configurable
@@ -350,8 +849,15 @@ Also in `config.py` / `.env.example`:
   students (`/student/profile`) can change their own password given
   their current one, without needing an admin-assisted reset
 - **Audit log** — every login (success/failure/lockout), student/session
-  deletion, attendance override, and admin-account change is recorded
-  with a timestamp, actor, and IP address, viewable at `/admin/audit-log`
+  deletion, attendance override/correction, session cancellation,
+  face-enrollment change, unknown-face detection, device/network/session
+  anomaly, and admin-account change is recorded with a timestamp, actor,
+  and IP address, viewable at `/admin/audit-log` — with a **Security
+  Events** filter (`?filter=security`), a Low/Medium/High/Critical
+  **severity level** per event (see "Security Monitoring"), an
+  admin-dashboard **Security Alerts** widget that groups spoof/liveness
+  events per student, and a fuller **Security Dashboard**
+  (`/admin/security-dashboard`) with trends and risk scores
 - **Account recovery** — if a student forgets their password, an admin
   can reset it from `/admin/students` (generates a one-time temporary
   password to share with the student out-of-band), after which the
@@ -370,10 +876,14 @@ Also in `config.py` / `.env.example`:
 it for anything beyond a class project or internal tool):
 - No encryption at rest for the SQLite databases or stored face images —
   anyone with filesystem access to the server can read them directly
-- The liveness check and CAPTCHA are both basic measures — not
-  production-grade anti-spoofing or bot protection against a motivated,
-  well-prepared attacker (e.g. a video replay containing a blink at the
-  right moment could still defeat the liveness check)
+- The liveness check and CAPTCHA are both basic measures. The active
+  liveness challenge (see "Anti-Proxy / Face Recognition Security")
+  raises the bar specifically against a pre-recorded video replay
+  compared to passive motion+blink alone, and the screen-replay detector
+  catches an unprepared "hold a phone up to the camera" attempt — but
+  none of this is production-grade anti-spoofing against a motivated,
+  well-resourced attacker (e.g. a live deepfake, or a video prepared
+  specifically to react to whichever challenge is shown)
 - IP allowlisting restricts by network, not physical location — it's not
   GPS-based geofencing and can be defeated by a VPN/proxy that appears to
   originate from an allowed network
@@ -478,6 +988,284 @@ limiting the same way the local test fixtures do.
 If you fork or self-host this repo, CI runs automatically the first time
 GitHub Actions is enabled for the fork — no extra setup needed.
 
+### Lint & type-check gate
+
+A second CI job (`lint`) runs [ruff](https://docs.astral.sh/ruff/) and
+[mypy](https://mypy-lang.org/) on every push/PR, configured in
+`pyproject.toml`. Ruff catches real bugs and import hygiene issues (unused
+imports/variables, bare `except:`, etc.); mypy is non-strict — it catches
+clear type errors without requiring annotations everywhere, since a lot of
+this codebase (Flask view functions, `sqlite3.Row` access, numpy/cv2
+arrays) isn't realistic to fully annotate. Run both locally with:
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+mypy
+```
+
+`ruff check . --fix` will auto-fix most of what it flags.
+
+### Dependency vulnerability scanning
+
+A third CI job (`security`) runs [pip-audit](https://pypi.org/project/pip-audit/)
+against everything `requirements.txt`, `requirements-dev.txt`, and
+`requirements-prod.txt` resolve to, checking for known CVEs in the PyPA
+Advisory Database. It fails the job (`--strict`) on any finding rather than
+just warning. Run it locally the same way:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt -r requirements-prod.txt
+pip-audit --strict
+```
+
+[Dependabot](https://docs.github.com/en/code-security/dependabot) is also
+configured (`.github/dependabot.yml`) to open a weekly PR for outdated pip
+dependencies and GitHub Actions versions, so vulnerable/stale pins don't
+just sit there between manual audits. It's told not to propose a major-version
+bump of `opencv-contrib-python` on its own, since 5.x removes the Torch
+model loader the face embedder depends on (see the pin comment in
+`requirements.txt`) — that upgrade needs a person to also port
+`get_embedder()` to an ONNX equivalent, not just accept a version bump.
+
+## 🗄️ Database Migrations
+
+Schema changes to `database/app.db` are managed with
+[Alembic](https://alembic.sqlalchemy.org/) instead of hand-rolled
+`ALTER TABLE` checks. Migration scripts live in `migrations/versions/`;
+`app.py`'s `init_databases()` calls `db_migrations.run_migrations()` on
+every startup, which:
+
+- Creates a brand-new database from scratch by running every migration in
+  order, or
+- Brings an existing database up to date by applying only the migrations
+  it hasn't seen yet (tracked in an `alembic_version` table), or
+- Detects a database created by an older, pre-Alembic version of this app
+  (it has tables but no `alembic_version` row), stamps it at the specific
+  revision matching what that old ad-hoc code actually created, and then
+  upgrades normally from there — so any migration added after that point
+  still gets applied, rather than the database being incorrectly marked
+  as fully up to date.
+
+This all happens automatically — there's no extra command to run for
+normal use. `database/FaceBase.db` (the legacy `people` table) isn't part
+of this migration chain; it has no schema history and is still created
+directly by `init_databases()`.
+
+To add a new migration by hand (autogenerate isn't used here — there's no
+SQLAlchemy ORM/model layer to diff against):
+
+```bash
+# Creates a new, empty revision file under migrations/versions/ chained
+# after the current head — fill in upgrade()/downgrade() yourself.
+alembic revision -m "add some_column to some_table"
+```
+
+To inspect or manage a database's migration state directly:
+
+```bash
+alembic -x database_path=database/app.db current   # show current revision
+alembic -x database_path=database/app.db history    # show the full chain
+```
+
+## 💾 Backup & Restore
+
+`backup.py` and `restore.py` handle the SQLite databases
+(`database/app.db`, `database/FaceBase.db`) and the registered face
+images (`Datasets/`).
+
+**Creating a backup:**
+
+```bash
+python backup.py                       # full backup (DBs + face images) to BACKUP_DIR (default: ./backups)
+python backup.py --skip-images         # DBs only — much faster/smaller
+python backup.py --output-dir /mnt/backups
+python backup.py --keep 30             # override BACKUP_RETENTION_COUNT for this run
+```
+
+Each run produces one self-contained `backup-YYYYmmdd-HHMMSS.tar.gz`
+archive containing both databases, the face images, and a small
+`manifest.json`. The databases are copied using
+[SQLite's own online backup API](https://www.sqlite.org/backup.html)
+(`sqlite3.Connection.backup()`), not a raw file copy — that's what makes
+it safe to run against a live database while the app is still serving
+requests: a plain `cp`/`shutil.copy` can catch app.db mid-write and
+produce a corrupt snapshot, where the backup API reads through SQLite's
+normal locking and always produces a consistent one. After creating the
+archive, old backups beyond `BACKUP_RETENTION_COUNT` (default: 14, set to
+`0` to keep every backup forever) are deleted automatically, so a
+scheduled job doesn't grow `BACKUP_DIR` without bound.
+
+**Restoring a backup:**
+
+```bash
+python restore.py backups/backup-20260820-020000.tar.gz
+python restore.py backups/backup-20260820-020000.tar.gz --force        # needed if destination already has data
+python restore.py backups/backup-20260820-020000.tar.gz --skip-images  # databases only, even if the archive has images
+```
+
+Restore has a few safety properties worth knowing about:
+- It refuses to overwrite an existing, non-empty database or `Datasets/`
+  folder unless you pass `--force` — you won't accidentally clobber live
+  data by running the wrong archive.
+- Even with `--force`, nothing is deleted: existing data is moved aside
+  to `<name>.pre-restore-<timestamp>` first, so a restore is itself
+  recoverable if it turns out to have been the wrong archive.
+- The restored database is checked with `PRAGMA integrity_check` before
+  the restore is considered successful, so a truncated or corrupted
+  archive is caught immediately rather than leaving a silently-broken
+  database in place.
+- The restored database is then run through the app's own Alembic
+  migrations (see "Database Migrations" above) automatically — a backup
+  made by an older version of this app, with an older schema, comes out
+  fully up to date, the same way a normal app startup would upgrade it.
+
+**Automating it.** Neither script schedules itself — something needs to
+invoke `backup.py` periodically. Two common options:
+
+```bash
+# cron (add via `crontab -e`; adjust paths for your setup):
+0 2 * * * cd /path/to/app && /path/to/venv/bin/python backup.py >> backup.log 2>&1
+
+# Running inside a Docker container via docker compose, from the host's cron:
+0 2 * * * docker compose -f /path/to/app/docker-compose.yml exec -T attendance-app python backup.py >> /var/log/attendance-backup.log 2>&1
+```
+
+Or a systemd timer, if you'd rather not touch crontab:
+
+```ini
+# /etc/systemd/system/attendance-backup.service
+[Unit]
+Description=Attendance app backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/path/to/app
+ExecStart=/path/to/venv/bin/python backup.py
+```
+
+```ini
+# /etc/systemd/system/attendance-backup.timer
+[Unit]
+Description=Run attendance-backup.service daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+sudo systemctl enable --now attendance-backup.timer
+```
+
+## 📋 Structured Logging
+
+Every log line — this app's own, plus (under gunicorn) gunicorn's access
+and error logs — is emitted as one JSON object per line by default (see
+`logging_config.py`), tagged with a `request_id` that's consistent across
+every log line produced while handling the same request. Configured via:
+
+- `LOG_LEVEL` (default `INFO`)
+- `LOG_FORMAT` (`json`, the default — recommended for production/log
+  shippers — or `plain`, a human-readable single-line format that's
+  easier to read in a local terminal during development)
+
+A request id is generated for every request (or reused from an inbound
+`X-Request-ID` header, if a trusted upstream reverse proxy already set
+one) and echoed back as an `X-Request-ID` response header, so a client,
+proxy, and this app's own logs can all be correlated for the same
+request. One structured "access log" line is emitted per request —
+method, path, status code, duration, remote address, and the logged-in
+user (if any) — deliberately **never** the request/response body, since
+those can carry face-image payloads or, on some legacy code paths,
+plaintext passwords.
+
+Example line (`LOG_FORMAT=json`, the default):
+
+```json
+{"timestamp": "2026-08-20T02:15:04.123Z", "level": "INFO", "logger": "attendance_app", "message": "GET /admin/dashboard 200", "request_id": "a4deac119e794146bf371479667467e6", "event": "http_request", "http_method": "GET", "http_path": "/admin/dashboard", "http_status": 200, "duration_ms": 42.7, "remote_addr": "127.0.0.1", "actor": "admin"}
+```
+
+Under gunicorn, `gunicorn.conf.py` also reformats gunicorn's own access
+and error logs as JSON (`JsonGunicornLogger` in `logging_config.py`), and
+sets `access_log_format` to include the same `X-Request-ID` the app set
+on the response — so gunicorn's access-log line for a request and this
+app's own access-log line for that same request share one `request_id`,
+even though they're logged from two different places. Set
+`GUNICORN_LOG_FORMAT=plain` to fall back to gunicorn's normal
+Apache-combined-style access log text instead (e.g. for a quick local run
+where JSON is harder to eyeball).
+
+An unhandled exception anywhere in the app is caught by a generic error
+handler that logs the full traceback (tagged with that request's id) and
+returns a generic message to the client — the traceback itself is never
+leaked in the response.
+
+## 📈 Metrics
+
+`GET /metrics` exposes request counts and latency (by route and status),
+audit-event counts (by action), attendance-marking outcomes, and a few
+current-state gauges (student count, active sessions, unread security
+notifications) in Prometheus text exposition format — hand-rolled rather
+than depending on the `prometheus_client` package, matching this
+project's general preference for no third-party dependency where a
+straightforward one suffices.
+
+```
+# HELP http_requests_total Total HTTP requests by route, method, and status class.
+# TYPE http_requests_total counter
+http_requests_total{endpoint="login",method="GET",status="2xx"} 42
+...
+```
+
+Configured via `METRICS_ENABLED` (default on) and optional
+`METRICS_AUTH_TOKEN` (accepted as `?token=` or `Authorization: Bearer
+<token>` — request counts aren't secret, but they do reveal usage
+patterns, so an internet-facing deployment may want to gate it). Two
+things worth knowing before wiring up a scraper:
+
+- **In-memory, per-process** — counters reset on restart and, under
+  gunicorn's default multi-worker setup, each worker only reports its
+  own share of traffic; there's no cross-worker aggregation. Scrape
+  every worker (or run `GUNICORN_WORKERS=1`) for an accurate aggregate.
+- Route labels use Flask's endpoint name (e.g. `login`, `admin_sessions`),
+  not the raw URL path, to keep the label set small and fixed rather than
+  exploding with every distinct session/student id that appears in a URL.
+
+## 🚨 Error Alerting
+
+Optional integration with [Sentry](https://sentry.io) for crash
+reporting (`error_reporting.py`) — entirely opt-in: nothing is sent
+anywhere, and no network call is made, unless `SENTRY_DSN` is set.
+
+```bash
+# .env or environment
+SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+SENTRY_ENVIRONMENT=production      # tags events, so staging noise doesn't mix with production alerts
+SENTRY_TRACES_SAMPLE_RATE=0.0      # 0 = error reporting only; >0 also samples performance traces
+```
+
+`sentry-sdk[flask]` is listed in `requirements-prod.txt` (not
+`requirements.txt`), so a local/dev install doesn't pull it in unasked —
+but every function in `error_reporting.py` is a safe no-op if the DSN
+isn't set or the package isn't installed, so the rest of the app never
+needs to check "is Sentry configured?" before calling them.
+
+Every captured event is tagged with the request's `request_id` (see
+"Structured Logging" above), so a Sentry alert and the matching JSON log
+line for the same request can be cross-referenced. Request/response
+bodies are never sent to Sentry (`send_default_pii=False`,
+`max_request_body_size='never'`), for the same reason they're never
+logged — they can carry face-image payloads or plaintext passwords.
+
+`backup.py` and `restore.py` also report failures to Sentry (as a
+message, not just an exception) if it's configured, so a broken scheduled
+backup doesn't go unnoticed until someone needs a restore that isn't
+there.
+
 ## 🚀 Deployment
 
 The instructions above (`python app.py`) run Flask's built-in development
@@ -570,6 +1358,20 @@ when there's no trusted proxy in front of the app would let any client
 spoof its own IP via that header, so only enable it when a proxy you
 control is actually terminating the connection.
 
+If that proxy is also terminating TLS (the normal case — see the nginx
+config below), also set:
+
+```bash
+SESSION_COOKIE_SECURE=1
+```
+
+so browsers refuse to send the session cookie over a plain HTTP
+connection. This defaults to on automatically when `BEHIND_REVERSE_PROXY=1`,
+but has its own switch in case that proxy *isn't* doing TLS (e.g. an
+internal staging box reached over plain HTTP) — setting it without HTTPS
+actually in front will just make login stop working, since the browser
+will silently drop the cookie.
+
 Minimal nginx config to sit in front of the container:
 
 ```nginx
@@ -623,10 +1425,13 @@ to `archive/legacy_scripts/` for reference — see `archive/README.md`.
 - [ ] Multi-language support
 - [ ] Mobile application
 - [ ] Cloud storage integration
-- [ ] Advanced analytics dashboard
-- [ ] SMS/email notifications
+- [ ] Deeper analytics (cohort comparisons, predictive risk scoring) beyond the current subject/date-range/semester reports
+- [ ] SMS/email notifications (e.g. notifying a student when their attendance is marked — the low-attendance alert now shows directly on the student's own profile/history, but there's still no push notification without email/SMS)
 - [ ] Biometric integration (fingerprint, iris)
 - [ ] AI-powered attendance predictions
+- [ ] Browser/E2E test coverage (the current suite is unit/integration level, mocking the camera pipeline)
+- [ ] SSO/institutional login (only this app's own username/password today)
+- [ ] A path to Postgres/concurrent-write scaling beyond the current single-SQLite-file design
 
 ## 🤝 Contributing
 

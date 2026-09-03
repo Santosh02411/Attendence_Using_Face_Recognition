@@ -12,6 +12,7 @@ Values can be set directly as OS environment variables, or placed in a
 loads that file automatically if present.
 """
 import os
+
 import cv2
 from dotenv import load_dotenv
 
@@ -64,7 +65,7 @@ TEST_CAPTURE_PATH = os.environ.get('TEST_CAPTURE_PATH') or os.path.join(BASE_DIR
 
 # --- Secret key / server ------------------------------------------------
 # ENV_VAR: FLASK_SECRET_KEY
-SECRET_KEY_ENV_VAR = 'FLASK_SECRET_KEY'
+SECRET_KEY_ENV_VAR = 'FLASK_SECRET_KEY'  # nosec B105 -- this is the *name* of the env var to read, not a secret value
 # ENV_VAR: DEFAULT_ADMIN_PASSWORD
 DEFAULT_ADMIN_PASSWORD = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'admin123')
 # ENV_VAR: FLASK_DEBUG
@@ -89,12 +90,75 @@ BEHIND_REVERSE_PROXY = os.environ.get('BEHIND_REVERSE_PROXY', '0') == '1'
 # Passed as ProxyFix's x_for/x_proto/x_host/x_port counts — see
 # https://werkzeug.palletsprojects.com/en/latest/middleware/proxy_fix/.
 PROXY_FIX_NUM_PROXIES = _env_int('PROXY_FIX_NUM_PROXIES', 1)
+# ENV_VAR: SESSION_COOKIE_SECURE
+# Marks the session cookie Secure (browser will never send it over plain
+# HTTP), so it must be off for local http://127.0.0.1 development. Default
+# follows BEHIND_REVERSE_PROXY since that's the production-shaped setup
+# (see README's "Deploying behind a reverse proxy"), but this has its own
+# switch too in case that proxy doesn't terminate TLS (e.g. an internal
+# staging box). Explicitly set SESSION_COOKIE_SECURE=1 for any real HTTPS
+# deployment, and note it's meaningless without HTTPS actually in front —
+# nothing here provides TLS itself (see README's "No HTTPS/TLS" note).
+SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', '1' if BEHIND_REVERSE_PROXY else '0') == '1'
 
 # --- Attendance rules -----------------------------------------------------
 # ENV_VAR: LOW_ATTENDANCE_THRESHOLD_PERCENT
 # Below this attendance percentage, a student shows up in the admin
-# dashboard's low-attendance alert list.
+# dashboard's low-attendance alert list, and in /admin/reports' warning
+# highlighting.
 LOW_ATTENDANCE_THRESHOLD_PERCENT = _env_float('LOW_ATTENDANCE_THRESHOLD_PERCENT', 75)
+
+# ENV_VAR: LATE_ENTRY_ENFORCEMENT_ENABLED
+# Off by default — this is a workflow choice each deployment opts into,
+# not a security control (unlike ANTI_SPOOF_ENABLED/ACTIVE_LIVENESS_ENABLED
+# above), and it's meaningless unless sessions are created with realistic
+# real-world start times. When on, self-service attendance marking
+# (POST /student/attend/mark) checks elapsed time since the session's
+# scheduled start (date + time) and classifies the mark as Present, Late,
+# or refuses it outright — see LATE_ENTRY_GRACE_MINUTES/
+# LATE_ENTRY_LATE_WINDOW_MINUTES below and _late_entry_status() in app.py.
+# Does not affect the admin-supervised kiosk view
+# (/admin/session/<id>/recognize) or manual overrides — those remain at
+# the admin's discretion.
+LATE_ENTRY_ENFORCEMENT_ENABLED = os.environ.get('LATE_ENTRY_ENFORCEMENT_ENABLED', '0') == '1'
+# ENV_VAR: LATE_ENTRY_GRACE_MINUTES
+# Marking within this many minutes of a session's scheduled start counts
+# as on-time ("Present"). Only checked when LATE_ENTRY_ENFORCEMENT_ENABLED.
+LATE_ENTRY_GRACE_MINUTES = _env_int('LATE_ENTRY_GRACE_MINUTES', 10)
+# ENV_VAR: LATE_ENTRY_LATE_WINDOW_MINUTES
+# After the grace period above, marking is still allowed (recorded as
+# "Late") for this many additional minutes. Beyond
+# LATE_ENTRY_GRACE_MINUTES + LATE_ENTRY_LATE_WINDOW_MINUTES, self-service
+# marking is refused outright — the student needs an admin override or an
+# approved correction request (see "Attendance correction requests" and
+# `clear_attendance_lock`-style admin actions in app.py) to be marked for
+# that session at all.
+LATE_ENTRY_LATE_WINDOW_MINUTES = _env_int('LATE_ENTRY_LATE_WINDOW_MINUTES', 20)
+# ENV_VAR: LATE_COUNTS_AS_PRESENT
+# Whether a "Late" mark counts toward a student's attendance percentage
+# the same as "Present" (still visually distinguished everywhere it's
+# shown) — see _attendance_counts_as_present() in app.py. Many
+# institutions count a late arrival as attended-but-flagged rather than
+# a miss; set to '0' to instead count Late the same as Absent for
+# percentage purposes.
+LATE_COUNTS_AS_PRESENT = os.environ.get('LATE_COUNTS_AS_PRESENT', '1') == '1'
+
+# ENV_VAR: ATTENDANCE_EDIT_LOCK_ENABLED
+# Once a session is this many days in the past, its attendance records
+# become read-only: no further admin manual override
+# (/admin/session/<id>/override) and no new student correction request
+# for that session — see _is_session_edit_locked() in app.py. Protects
+# the historical record from being quietly reshuffled long after the
+# fact; there is deliberately no "unlock" endpoint in this project.
+ATTENDANCE_EDIT_LOCK_ENABLED = os.environ.get('ATTENDANCE_EDIT_LOCK_ENABLED', '1') == '1'
+# ENV_VAR: ATTENDANCE_EDIT_LOCK_DAYS
+ATTENDANCE_EDIT_LOCK_DAYS = _env_int('ATTENDANCE_EDIT_LOCK_DAYS', 30)
+
+# ENV_VAR: CORRECTION_REASON_MAX_LENGTH
+# Caps how long a student's correction-request reason (and an admin's
+# rejection note) can be — plain abuse-of-input-size prevention, same
+# spirit as MAX_IMAGE_BASE64_CHARS below.
+CORRECTION_REASON_MAX_LENGTH = _env_int('CORRECTION_REASON_MAX_LENGTH', 500)
 
 # --- Face embedding match thresholds --------------------------------------
 # EMBEDDER_MODEL_PATH points at the OpenFace CNN; it expects a 96x96 crop.
@@ -124,6 +188,29 @@ DUPLICATE_FACE_MATCH_THRESHOLD = _env_float('DUPLICATE_FACE_MATCH_THRESHOLD', 0.
 # not the whole gallery, so it can afford to be a bit stricter than
 # open-ended identification.
 MARK_ATTENDANCE_MATCH_THRESHOLD = _env_float('MARK_ATTENDANCE_MATCH_THRESHOLD', 0.55)
+
+# ENV_VAR: EMBEDDER_MODEL_VERSION
+# A human-readable label for the current embedding model/config, stamped
+# onto every new face_embeddings row (see app.py's save_face_images()).
+# Bump this whenever EMBEDDER_MODEL_PATH or EMBEDDING_INPUT_SIZE changes,
+# so /admin/recognition-settings can show which students still have
+# embeddings from a retired model version and may need re-enrollment —
+# embeddings aren't automatically portable across different model
+# weights. Purely a label; changing it does not itself trigger anything.
+EMBEDDER_MODEL_VERSION = os.environ.get('EMBEDDER_MODEL_VERSION', 'openface-nn4-small2-v1')
+
+# --- Face enrollment quality / status --------------------------------------
+# ENV_VAR: ENROLLMENT_MIN_PHOTOS
+# Fewer than this many stored photos -> enrollment status is "Pending"
+# rather than "Complete", regardless of their quality — see
+# _enrollment_status() in app.py.
+ENROLLMENT_MIN_PHOTOS = _env_int('ENROLLMENT_MIN_PHOTOS', 3)
+# ENV_VAR: ENROLLMENT_QUALITY_REENROLL_THRESHOLD
+# A student's average quality_score (0-100, see _compute_quality_score())
+# below this also keeps their status at "Pending" and surfaces the
+# re-enrollment reminder — on their own profile, and in the admin
+# dashboard's Enrollment Reminders widget.
+ENROLLMENT_QUALITY_REENROLL_THRESHOLD = _env_float('ENROLLMENT_QUALITY_REENROLL_THRESHOLD', 50.0)
 
 # --- Haar cascade face-detection parameters -------------------------------
 # Each dict maps directly onto cv2.CascadeClassifier.detectMultiScale()
@@ -223,6 +310,22 @@ LOCKOUT_MAX_FAILED_ATTEMPTS = _env_int('LOCKOUT_MAX_FAILED_ATTEMPTS', 5)
 # ENV_VAR: LOCKOUT_DURATION_MINUTES
 LOCKOUT_DURATION_MINUTES = _env_int('LOCKOUT_DURATION_MINUTES', 15)
 
+# --- Attendance-marking abuse lockout --------------------------------------
+# Separate from the login lockout above, and from RATE_LIMIT_ATTENDANCE:
+# rate limiting throttles the endpoint by IP regardless of outcome; this
+# tracks repeated attendance_spoof_suspected / attendance_liveness_
+# challenge_failed FAILURES specifically for one student account.
+# Deliberately does NOT count an ordinary "face not recognized" miss
+# (that can happen to a genuine student in bad lighting) — only the two
+# anti-proxy checks above. Without this, someone could retry a
+# presentation-attack attempt indefinitely: each attempt was already
+# written to the audit log, but nothing stopped the retries or flagged
+# the account for review. See _register_attendance_security_failure().
+# ENV_VAR: ATTENDANCE_LOCKOUT_MAX_FAILED_ATTEMPTS
+ATTENDANCE_LOCKOUT_MAX_FAILED_ATTEMPTS = _env_int('ATTENDANCE_LOCKOUT_MAX_FAILED_ATTEMPTS', 5)
+# ENV_VAR: ATTENDANCE_LOCKOUT_DURATION_MINUTES
+ATTENDANCE_LOCKOUT_DURATION_MINUTES = _env_int('ATTENDANCE_LOCKOUT_DURATION_MINUTES', 30)
+
 # --- CAPTCHA ---------------------------------------------------------------
 # A simple self-hosted, distorted-text image CAPTCHA (PIL-rendered) shown
 # on both login forms. This is NOT equivalent to a service like reCAPTCHA
@@ -270,7 +373,10 @@ MAX_IMAGE_BASE64_CHARS = _env_int('MAX_IMAGE_BASE64_CHARS', 6_000_000)
 # Bundled with opencv-contrib-python — no download needed, unlike the
 # frontal-face cascade's path (which is user-configurable above).
 # ENV_VAR: EYE_CASCADE_PATH
-EYE_CASCADE_PATH = os.environ.get('EYE_CASCADE_PATH') or os.path.join(cv2.data.haarcascades, 'haarcascade_eye.xml')
+EYE_CASCADE_PATH = os.environ.get('EYE_CASCADE_PATH') or os.path.join(
+    cv2.data.haarcascades,  # type: ignore[attr-defined]  # bundled with opencv-contrib-python; cv2's stubs omit the `data` submodule
+    'haarcascade_eye.xml',
+)
 
 # --- Enhanced liveness: blink challenge -----------------------------------
 # The original two-frame motion check (still active — see
@@ -295,6 +401,97 @@ LIVENESS_FRAME_COUNT = _env_int('LIVENESS_FRAME_COUNT', 5)
 # degrade Haar eye-cascade reliability) — the motion check still applies
 # either way.
 LIVENESS_REQUIRE_BLINK = os.environ.get('LIVENESS_REQUIRE_BLINK', '1') == '1'
+
+# --- Active liveness challenge (anti-proxy / anti-replay) -------------------
+# See face_security.py. The passive checks above (motion + blink) are, by
+# their own admission, not production-grade anti-spoofing: a video replay
+# of the real person prepared in advance would satisfy both, since it
+# already contains natural motion and a blink somewhere in it. This raises
+# the bar specifically against a pre-recorded/looped video (the realistic
+# "proxy attendance" attack — someone plays a clip of the absent student
+# instead of appearing themselves): the server picks ONE random challenge
+# per attempt (right before capture starts) and the person must perform
+# that specific action within the captured burst. A fixed pre-recorded
+# clip would need to happen to already contain the randomly-chosen action
+# at the right moment, for every one of several possible challenges, which
+# a simple loop can't guarantee. Still not unbeatable (a live deepfake or a
+# very well-prepared attacker could adapt), but meaningfully raises the
+# cost over motion+blink alone.
+# ENV_VAR: ACTIVE_LIVENESS_ENABLED
+ACTIVE_LIVENESS_ENABLED = os.environ.get('ACTIVE_LIVENESS_ENABLED', '1') == '1'
+# ENV_VAR: ACTIVE_LIVENESS_CHALLENGE_TYPES
+# Comma-separated subset of: blink, head_turn, head_nod. A challenge is
+# picked at random from this list for each attempt.
+ACTIVE_LIVENESS_CHALLENGE_TYPES = [
+    c.strip() for c in os.environ.get('ACTIVE_LIVENESS_CHALLENGE_TYPES', 'blink,head_turn,head_nod').split(',') if c.strip()
+]
+# ENV_VAR: ACTIVE_LIVENESS_CHALLENGE_TTL_SECONDS
+# A challenge must be answered within this many seconds of being issued
+# (and is single-use regardless) — long enough for a genuine capture
+# burst, short enough that a challenge can't be issued once and then
+# answered later with a separately-prepared clip.
+ACTIVE_LIVENESS_CHALLENGE_TTL_SECONDS = _env_int('ACTIVE_LIVENESS_CHALLENGE_TTL_SECONDS', 30)
+# ENV_VAR: ACTIVE_LIVENESS_HEAD_TURN_MIN_SHIFT_RATIO
+# For the head_turn challenge: the detected face box's horizontal center
+# must shift by at least this fraction of the face's own width between
+# frames to count as a genuine turn. Deliberately direction-agnostic
+# (either left or right satisfies it) — the raw captured frame is not
+# mirrored the way the on-screen preview is (see student_attend.html),
+# so "must turn specifically left" vs "right" would depend on camera
+# setup in a way that's confusing to specify correctly; requiring
+# noticeable motion in either direction still requires genuine 3D head
+# movement a flat photo/screen can't produce on command.
+ACTIVE_LIVENESS_HEAD_TURN_MIN_SHIFT_RATIO = _env_float('ACTIVE_LIVENESS_HEAD_TURN_MIN_SHIFT_RATIO', 0.12)
+# ENV_VAR: ACTIVE_LIVENESS_HEAD_NOD_MIN_SHIFT_RATIO
+# Same idea as above, vertical axis, for the head_nod challenge.
+ACTIVE_LIVENESS_HEAD_NOD_MIN_SHIFT_RATIO = _env_float('ACTIVE_LIVENESS_HEAD_NOD_MIN_SHIFT_RATIO', 0.10)
+
+# --- Presentation-attack ("spoof") detection --------------------------------
+# See face_security.py's compute_screen_replay_score(). A heuristic, not a
+# trained anti-spoofing model (none was reachable from this project's
+# build environment — same constraint noted in align_face_crop()'s
+# docstring) — it looks for the periodic pixel-grid pattern (moire) a
+# phone/tablet/monitor screen produces when photographed by another
+# camera at close range, which a real face's skin texture doesn't have.
+# Meaningful against "hold a phone playing a video up to the camera"; not
+# a defense against a high-quality printed photo, which has no screen
+# grid to detect (the existing IMAGE_QUALITY_* blur/brightness gate,
+# applied here too now — see student_mark_attendance() — is the closest
+# thing to a defense against that, since a re-photographed print is often
+# noticeably softer than a direct live capture).
+# ENV_VAR: ANTI_SPOOF_ENABLED
+ANTI_SPOOF_ENABLED = os.environ.get('ANTI_SPOOF_ENABLED', '1') == '1'
+# ENV_VAR: ANTI_SPOOF_MAX_PERIODICITY_RATIO
+# How much stronger the single strongest high-frequency spectral peak is
+# allowed to be than the surrounding band's average, before a frame is
+# flagged as a likely screen replay. Lower = stricter (more false
+# positives on e.g. patterned backgrounds or fabric visible near the
+# face); higher = more permissive. Tuned conservatively (permissive) by
+# default specifically to avoid rejecting genuine attendance attempts —
+# ordinary JPEG compression alone (even of an otherwise perfectly
+# genuine photo) can push this into the high-teens in pathological cases
+# (very noisy/low-quality source images), so the default sits well above
+# that with real margin before actual screen-replay territory (typically
+# in the hundreds for a photographed screen's pixel grid) — tighten it if
+# screen-replay attempts are a known problem in your deployment and false
+# positives aren't.
+ANTI_SPOOF_MAX_PERIODICITY_RATIO = _env_float('ANTI_SPOOF_MAX_PERIODICITY_RATIO', 30.0)
+
+# --- Ensemble embedding matching (accuracy) ---------------------------------
+# ENV_VAR: MATCH_TOP_K
+# How many of a candidate's stored embeddings to average together when
+# scoring a match, instead of just taking the single closest one. Default
+# 1 = exactly today's behavior (single best embedding) — this is opt-in,
+# not a silent accuracy change, because averaging generally produces
+# lower similarity scores than a single best match, which can shift how
+# often the existing RECOGNIZE_MATCH_THRESHOLD / MARK_ATTENDANCE_MATCH_THRESHOLD
+# / DUPLICATE_FACE_MATCH_THRESHOLD trigger — raising this above 1 usually
+# means those thresholds need re-tuning (typically lowering slightly) for
+# your own registered photos. What it buys you: a single unusually good
+# (for an impostor) or unusually poor (for the genuine student) stored
+# embedding matters less, since the score reflects several of that
+# person's photos rather than whichever one happens to be closest.
+MATCH_TOP_K = _env_int('MATCH_TOP_K', 1)
 
 # --- Multi-face handling ---------------------------------------------------
 # ENV_VAR: REJECT_MULTIPLE_FACES
@@ -343,11 +540,98 @@ ATTENDANCE_ALLOWED_NETWORKS = [
 # places at once) is blocked with a clear error. Set to allow it anyway.
 ALLOW_OVERLAPPING_SESSIONS = os.environ.get('ALLOW_OVERLAPPING_SESSIONS', '0') == '1'
 
+# ENV_VAR: SESSION_AUTO_CLOSE_ENABLED
+# Once a session's attendance window has fully elapsed (see
+# _session_attendance_window_minutes() in app.py — a session's own
+# attendance_window_minutes override if set, else
+# LATE_ENTRY_GRACE_MINUTES + LATE_ENTRY_LATE_WINDOW_MINUTES), it's
+# automatically moved from 'active' to 'completed' the next time a
+# session-listing or marking route runs (there's no background scheduler
+# in this project — see README). Independent of
+# LATE_ENTRY_ENFORCEMENT_ENABLED: that toggle only controls whether
+# self-service marking classifies Present vs Late vs refused: this one
+# is about session bookkeeping (not leaving sessions "active" forever),
+# and is on by default.
+SESSION_AUTO_CLOSE_ENABLED = os.environ.get('SESSION_AUTO_CLOSE_ENABLED', '1') == '1'
+
 # --- Pagination --------------------------------------------------------
 # ENV_VAR: STUDENTS_PER_PAGE
 STUDENTS_PER_PAGE = _env_int('STUDENTS_PER_PAGE', 25)
 # ENV_VAR: AUDIT_LOG_PER_PAGE
 AUDIT_LOG_PER_PAGE = _env_int('AUDIT_LOG_PER_PAGE', 50)
+
+# --- Security-event dashboard ----------------------------------------------
+# How far back the admin dashboard's "Security Alerts" widget looks when
+# grouping and counting security-relevant audit_log events (spoof
+# attempts, liveness-challenge failures, lockouts) per student — see
+# SECURITY_AUDIT_ACTIONS in app.py and admin_dashboard().
+# ENV_VAR: SECURITY_ALERT_WINDOW_DAYS
+SECURITY_ALERT_WINDOW_DAYS = _env_int('SECURITY_ALERT_WINDOW_DAYS', 7)
+
+# --- Security monitoring: fingerprinting, risk scoring, escalation --------
+# ENV_VAR: SECURITY_RISK_WINDOW_DAYS
+# How far back _compute_risk_score() looks when tallying a student's
+# weighted security events (spoof attempts, suspicious devices, etc.)
+# into a 0-100 risk score — see RISK_EVENT_WEIGHTS in app.py.
+SECURITY_RISK_WINDOW_DAYS = _env_int('SECURITY_RISK_WINDOW_DAYS', 30)
+# ENV_VAR: SECURITY_RISK_ESCALATION_THRESHOLD
+# A risk score at or above this (0-100) automatically escalates the
+# student (students.security_escalated) — which blocks their attendance
+# marking the same way the attendance-abuse lockout does, until an admin
+# reviews and clears it. Runtime-configurable from
+# /admin/security-settings — see RUNTIME_CONFIGURABLE_SETTINGS in app.py.
+SECURITY_RISK_ESCALATION_THRESHOLD = _env_int('SECURITY_RISK_ESCALATION_THRESHOLD', 60)
+# ENV_VAR: CONCURRENT_SESSION_WINDOW_MINUTES
+# Two active login sessions for the same student, both last-active
+# within this many minutes of each other, are flagged as a possible
+# concurrent/shared-account login — see _check_concurrent_session().
+CONCURRENT_SESSION_WINDOW_MINUTES = _env_int('CONCURRENT_SESSION_WINDOW_MINUTES', 15)
+# ENV_VAR: NETWORK_CHANGE_WINDOW_MINUTES
+# A login from an IP on a different network than the student's last
+# login, within this many minutes of that last login, is flagged as a
+# network change; within NETWORK_CHANGE_IMPOSSIBLE_MINUTES specifically,
+# it's flagged at the higher "impossible location" severity instead (see
+# _check_network_change() in app.py). This is an IP-address heuristic
+# only — there's no bundled GeoIP database, so it cannot measure actual
+# physical distance or confirm true impossibility, only "a meaningfully
+# different network, suspiciously soon after the last one."
+NETWORK_CHANGE_WINDOW_MINUTES = _env_int('NETWORK_CHANGE_WINDOW_MINUTES', 60)
+# ENV_VAR: NETWORK_CHANGE_IMPOSSIBLE_MINUTES
+NETWORK_CHANGE_IMPOSSIBLE_MINUTES = _env_int('NETWORK_CHANGE_IMPOSSIBLE_MINUTES', 5)
+
+# --- Observability ----------------------------------------------------------
+# ENV_VAR: METRICS_ENABLED
+# Exposes /metrics in Prometheus text exposition format (request counts
+# and latency by route, audit-event counts by action, attendance-mark
+# outcomes) — in-memory counters, hand-rolled rather than depending on
+# the prometheus_client package. See app.py's "In-process metrics"
+# comment for the multi-worker caveat.
+METRICS_ENABLED = os.environ.get('METRICS_ENABLED', '1') == '1'
+# ENV_VAR: METRICS_AUTH_TOKEN
+# If set, /metrics requires this exact value as either a `?token=`
+# query parameter or an `Authorization: Bearer <token>` header — request
+# counts and latencies aren't secret, but they do reveal usage patterns
+# (e.g. how many students are actively marking attendance right now),
+# so a deployment exposed to the internet may want to gate the endpoint.
+# Unset (the default) leaves /metrics open to anyone who can reach it,
+# same as most self-hosted Prometheus exporters.
+METRICS_AUTH_TOKEN = os.environ.get('METRICS_AUTH_TOKEN') or None
+
+# ENV_VAR: REALTIME_UPDATES_ENABLED
+# Whether the admin session-monitor page (/admin/session/<id>) uses
+# long-polling for near-real-time updates when a student marks
+# attendance, instead of relying solely on its periodic (interval) poll.
+# See app.py's session_updates() docstring for exactly how this works
+# and its trade-offs under gunicorn's default multi-worker sync setup —
+# briefly: each open admin viewer ties up one worker for up to
+# REALTIME_LONGPOLL_TIMEOUT_SECONDS at a time, repeating, so don't enable
+# this with more concurrent session-monitor viewers open than you have
+# spare GUNICORN_WORKERS. Turning it off falls back to plain interval
+# polling only (still correct, just less immediate).
+REALTIME_UPDATES_ENABLED = os.environ.get('REALTIME_UPDATES_ENABLED', '1') == '1'
+# ENV_VAR: REALTIME_LONGPOLL_TIMEOUT_SECONDS
+REALTIME_LONGPOLL_TIMEOUT_SECONDS = _env_int('REALTIME_LONGPOLL_TIMEOUT_SECONDS', 8)
+
 # ENV_VAR: ATTENDANCE_RECORDS_PER_PAGE
 ATTENDANCE_RECORDS_PER_PAGE = _env_int('ATTENDANCE_RECORDS_PER_PAGE', 50)
 
@@ -356,4 +640,46 @@ ATTENDANCE_RECORDS_PER_PAGE = _env_int('ATTENDANCE_RECORDS_PER_PAGE', 50)
 # Upper bound on how many rows a single CSV bulk-import can contain, to
 # keep one request bounded.
 MAX_BULK_IMPORT_ROWS = _env_int('MAX_BULK_IMPORT_ROWS', 500)
+
+# --- Logging -------------------------------------------------------------
+# See logging_config.py. Every log line (this app's own, werkzeug's
+# request log, and — under gunicorn — gunicorn's access/error logs) is
+# emitted as one JSON object per line by default, tagged with the
+# request_id of whichever request triggered it (see app.py's
+# before_request/after_request hooks).
+# ENV_VAR: LOG_LEVEL
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+# ENV_VAR: LOG_FORMAT
+# 'json' (default, recommended for production/log shippers) or 'plain'
+# (a human-readable single-line format, easier to read in a local
+# terminal during development).
+LOG_FORMAT = os.environ.get('LOG_FORMAT', 'json')
+
+# --- Error alerting / crash reporting (Sentry) -----------------------------
+# Entirely opt-in: nothing is sent anywhere unless SENTRY_DSN is set. See
+# error_reporting.py and the README's "Error Alerting" section.
+# ENV_VAR: SENTRY_DSN
+SENTRY_DSN = os.environ.get('SENTRY_DSN', '')
+# ENV_VAR: SENTRY_ENVIRONMENT
+# Tags every event so Sentry can separate e.g. staging noise from
+# production alerts. Defaults to something obviously-a-placeholder so an
+# operator notices and sets it, rather than everything silently landing
+# under "production".
+SENTRY_ENVIRONMENT = os.environ.get('SENTRY_ENVIRONMENT', 'unspecified')
+# ENV_VAR: SENTRY_TRACES_SAMPLE_RATE
+# Fraction (0.0-1.0) of requests to also capture full performance traces
+# for, independent of error reporting (which always happens regardless of
+# this value). 0 (default) = error reporting only, no tracing overhead.
+SENTRY_TRACES_SAMPLE_RATE = _env_float('SENTRY_TRACES_SAMPLE_RATE', 0.0)
+
+# --- Backups ---------------------------------------------------------------
+# See backup.py / restore.py and the README's "Backup & Restore" section.
+# ENV_VAR: BACKUP_DIR
+BACKUP_DIR = os.environ.get('BACKUP_DIR') or os.path.join(BASE_DIR, 'backups')
+# ENV_VAR: BACKUP_RETENTION_COUNT
+# backup.py deletes older backups beyond this count each time it runs
+# (keeping the N most recent), so a scheduled/automated backup job
+# doesn't grow BACKUP_DIR without bound. Set to 0 to keep every backup
+# ever made (no automatic deletion).
+BACKUP_RETENTION_COUNT = _env_int('BACKUP_RETENTION_COUNT', 14)
 

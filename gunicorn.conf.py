@@ -12,7 +12,10 @@ works across dev/staging/prod without a rebuild.
 import multiprocessing
 import os
 
-bind = f"{os.environ.get('GUNICORN_HOST', '0.0.0.0')}:{os.environ.get('GUNICORN_PORT', '5000')}"
+# Bound to all interfaces intentionally: container/reverse-proxy deployments
+# need to accept traffic from outside gunicorn's own network namespace.
+# Override GUNICORN_HOST to restrict it for a bare-metal deployment.
+bind = f"{os.environ.get('GUNICORN_HOST', '0.0.0.0')}:{os.environ.get('GUNICORN_PORT', '5000')}"  # nosec B104
 
 # A small, CPU-bound-ish app (face embedding inference happens synchronously
 # per request) benefits more from a modest worker count than from a large
@@ -41,3 +44,24 @@ timeout = int(os.environ.get('GUNICORN_TIMEOUT', 60))
 accesslog = '-'   # stdout — let the container runtime / orchestrator collect logs
 errorlog = '-'    # stderr
 loglevel = os.environ.get('GUNICORN_LOG_LEVEL', 'info')
+
+# Structured (JSON) access/error logs — see logging_config.py's
+# JsonGunicornLogger. Reformats gunicorn's own logs the same way
+# logging_config.configure_app_logging() formats the app's own (both
+# ultimately use the same JsonFormatter), so a log shipper downstream
+# sees one consistent shape whether a line came from gunicorn itself or
+# from inside the Flask app. Set GUNICORN_LOG_FORMAT=plain to fall back
+# to gunicorn's normal Apache-combined-style access log text (e.g. for a
+# quick local `gunicorn --config gunicorn.conf.py wsgi:app` run where
+# JSON is harder to eyeball).
+if os.environ.get('GUNICORN_LOG_FORMAT', 'json') != 'plain':
+    logger_class = 'logging_config.JsonGunicornLogger'
+
+# %({x-request-id}o)s reads the X-Request-ID response header the app sets
+# on every response (see app.py's after_request hook) — so a gunicorn
+# access-log line and the app's own per-request JSON log line for the
+# same request end up tagged with the same id, letting the two be
+# cross-referenced even though they're logged from different places.
+access_log_format = (
+    '%(h)s %(l)s %(u)s "%(r)s" %(s)s %(b)s %(D)sus request_id=%({x-request-id}o)s'
+)

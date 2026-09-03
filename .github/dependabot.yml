@@ -1,0 +1,27 @@
+version: 2
+updates:
+  # requirements.txt / requirements-dev.txt / requirements-prod.txt are all
+  # pip-ecosystem manifests in the repo root — Dependabot reads all of them
+  # from a single "pip" entry pointed at the root directory.
+  - package-ecosystem: 'pip'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+    # opencv-contrib-python is pinned below 5.0 deliberately (see the
+    # comment in requirements.txt — 5.x drops cv2.dnn.readNetFromTorch,
+    # which the face embedder depends on). Don't let Dependabot open PRs
+    # that would silently break face recognition; a major-version bump
+    # here needs a person to also port get_embedder() to the ONNX
+    # equivalent, not just accept a version bump.
+    ignore:
+      - dependency-name: 'opencv-contrib-python'
+        update-types: ['version-update:semver-major']
+
+  # Keeps the actions pinned in .github/workflows/ci.yml (checkout,
+  # setup-python, upload-artifact) current.
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10

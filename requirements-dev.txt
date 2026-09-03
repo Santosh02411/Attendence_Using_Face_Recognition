@@ -1,4 +1,16 @@
-# Extra dependencies for running the test suite (not needed to run the app itself).
+# Extra dependencies for running the test suite, linting/type-checking, and
+# dependency vulnerability scanning (not needed to run the app itself).
 # Install alongside requirements.txt: pip install -r requirements.txt -r requirements-dev.txt
 -r requirements.txt
 pytest>=8.0
+
+# Lint + type-check gate (see pyproject.toml for config, .github/workflows/ci.yml for the CI job)
+ruff>=0.6
+# Pinned below 2.0: mypy 2.x dropped support for `python_version = "3.9"`
+# (our pyproject.toml target, matching the README's stated minimum/the CI
+# test matrix's low end) — it now requires 3.10+ as the simulated target.
+mypy>=1.10,<2.0
+
+# Dependency vulnerability scanning (see .github/workflows/ci.yml "security" job).
+# Checks installed packages against the PyPA Advisory Database.
+pip-audit>=2.7

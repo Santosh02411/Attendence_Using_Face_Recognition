@@ -1,0 +1,68 @@
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+extend-exclude = ["archive", "migrations/versions"]
+
+[tool.ruff.lint]
+# Kept intentionally modest for a project this size: real bugs (F) and
+# import hygiene (E/W core pyflakes+pycodestyle rules) are enforced;
+# stylistic/opinionated rule families (docstrings, complexity, etc.) are
+# left off so the gate catches mistakes without turning into a rewrite.
+select = ["E", "F", "W", "I", "B", "SIM"]
+ignore = [
+    "E501",  # line length is enforced by the formatter/line-length setting, not worth a hard failure here
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Legacy, unmaintained scripts kept only for reference (see archive/README.md).
+"archive/**" = ["E", "F", "W", "I", "B", "SIM"]
+# Alembic revision modules follow a generated template (unused sa import
+# in some, wildcard-ish upgrade()/downgrade() shape) — not worth linting
+# like application code.
+"migrations/**" = ["I"]
+
+[tool.mypy]
+python_version = "3.9"
+# Whole-repo type checking isn't realistic here (Flask view functions pass
+# sqlite3.Row / dict-shaped data around loosely, and the face-recognition
+# code leans on numpy/cv2 arrays) — mypy runs non-strict, catching clear
+# type errors (wrong arg types, unreachable code, etc.) without demanding
+# annotations everywhere.
+#
+# `files` is explicit rather than checking the whole repo: mypy resolves
+# imports transitively, and tests/ importing pytest pulls in
+# _pytest's own source (which uses 3.10+ match-case syntax) as something
+# to type-check under our 3.9 target — an installed third-party package's
+# internals, not our code. Limiting to our own top-level modules and the
+# migrations avoids that without weakening ignore_missing_imports.
+files = [
+    "app.py",
+    "config.py",
+    "db_migrations.py",
+    "logging_config.py",
+    "error_reporting.py",
+    "backup.py",
+    "restore.py",
+    "face_security.py",
+    "migrate_embeddings.py",
+    "reset_admin_password.py",
+    "healthcheck.py",
+    "wsgi.py",
+    "gunicorn.conf.py",
+    "migrations",
+]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+exclude = [
+    "^archive/",
+    "^migrations/versions/",
+]
+
+# Third-party packages here ship no type stubs (or none this project
+# depends on) — silence the "missing library stubs" note per-module
+# instead of disabling it project-wide.
+[[tool.mypy.overrides]]
+module = ["cv2.*", "flask_wtf.*", "flask_limiter.*", "flask_limiter.util"]
+ignore_missing_imports = true

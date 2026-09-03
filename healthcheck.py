@@ -13,10 +13,10 @@ import sys
 import urllib.request
 
 port = os.environ.get('GUNICORN_PORT', '5000')
-url = f'http://127.0.0.1:{port}/login'
+url = f'http://127.0.0.1:{port}/login'  # fixed loopback host + operator-controlled port, never user input
 
 try:
-    with urllib.request.urlopen(url, timeout=3) as response:
+    with urllib.request.urlopen(url, timeout=3) as response:  # nosec B310
         sys.exit(0 if response.status < 500 else 1)
 except Exception:
     sys.exit(1)

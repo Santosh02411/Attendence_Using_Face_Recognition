@@ -21,9 +21,9 @@ import argparse
 import getpass
 import sys
 
-import config as cfg
-from app import get_db_connection, init_databases, validate_password_strength
 from werkzeug.security import generate_password_hash
+
+from app import get_db_connection, init_databases, validate_password_strength
 
 
 def main():

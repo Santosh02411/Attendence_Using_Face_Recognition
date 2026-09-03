@@ -22,6 +22,11 @@ services:
       # inside the (ephemeral) container filesystem.
       - ./database:/app/database
       - ./Datasets:/app/Datasets
+      # Where backup.py writes archives to (see README "Backup & Restore")
+      # — same reasoning: must survive a container restart/rebuild, and
+      # ideally lives somewhere with its own backup/retention outside the
+      # host too, not just on the same disk as database/.
+      - ./backups:/app/backups
     healthcheck:
       test: ["CMD", "python", "healthcheck.py"]
       interval: 30s

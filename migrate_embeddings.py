@@ -23,7 +23,7 @@ import numpy as np
 from PIL import Image
 
 import config as cfg
-from app import compute_embedding, store_embedding, init_databases
+from app import compute_embedding, init_databases, store_embedding
 
 
 def _ensure_migration_table(conn):
@@ -109,7 +109,13 @@ def main():
 
         try:
             embedding = compute_embedding(face_crop)
-            store_embedding(student_id, embedding)
+            quality_score = None
+            try:
+                from app import _compute_quality_score
+                quality_score = _compute_quality_score(gray[y:y+h, x:x+w] if len(faces) > 0 else gray)
+            except Exception:  # nosec B110
+                pass  # best-effort only -- backfilling a quality score is not this script's core job
+            store_embedding(student_id, embedding, image_filename=filename, quality_score=quality_score)
             _mark_migrated(conn, filename)
             migrated += 1
             print(f'  [ok] {filename} -> student {student_id}')

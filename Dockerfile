@@ -47,7 +47,7 @@ COPY . .
 # sure they exist and are owned by the user the process actually runs as,
 # so a bind-mounted host directory with different ownership doesn't cause
 # a permission error on first write.
-RUN mkdir -p database Datasets models \
+RUN mkdir -p database Datasets models backups \
     && chown -R appuser:appuser /app
 
 USER appuser
