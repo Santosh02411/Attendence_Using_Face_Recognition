@@ -5,7 +5,7 @@ python-dotenv>=1.0
 # Schema migrations for database/app.db (see migrations/ and db_migrations.py).
 # Pulls in SQLAlchemy transitively; nothing in the app uses the ORM, Alembic
 # only runs raw SQL via op.execute()/op.create_table() against sqlite.
-alembic>=1.13,<2.0
+alembic>=1.19.1,<2.0
 # Upper-bounded below 5.0: OpenCV 5.x removed the Torch/Caffe importers
 # (cv2.dnn.readNetFromTorch), which get_embedder() in app.py depends on to
 # load models/openface_nn4.small2.v1.t7. An unbounded ">=4.13.0" silently
