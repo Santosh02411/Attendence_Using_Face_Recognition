@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Face Recognition Attendance</title>
-    <!-- Add Google Fonts (Inter) -->
+    <!-- Source Serif 4 (headings/brand), IBM Plex Sans (UI/body), IBM Plex Mono (numeric readouts) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css">
     
     <script>
@@ -19,7 +19,18 @@
 </head>
 <body>
     <header class="topbar">
-        <div class="brand">Face Attendance System</div>
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 8V6a2 2 0 0 1 2-2h2"></path>
+                    <path d="M18 4h2a2 2 0 0 1 2 2v2"></path>
+                    <path d="M20 16v2a2 2 0 0 1-2 2h-2"></path>
+                    <path d="M8 20H6a2 2 0 0 1-2-2v-2"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+            </span>
+            Face Attendance
+        </div>
         <nav>
             {% if session.user_type == 'admin' %}
             <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>

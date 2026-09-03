@@ -12,14 +12,14 @@
         <span class="status-badge status-present">Low: {{ severity_totals.low }}</span>
         <span class="status-badge status-late">Medium: {{ severity_totals.medium }}</span>
         <span class="status-badge status-absent">High: {{ severity_totals.high }}</span>
-        <span class="status-badge status-absent" style="background: #7f1d1d; color: #fecaca;">Critical: {{ severity_totals.critical }}</span>
+        <span class="status-badge critical">Critical: {{ severity_totals.critical }}</span>
     </div>
     {% if trend %}
     <div class="trend-chart">
         {% for point in trend %}
         <div class="trend-bar-wrap" title="{{ point.label }}: {{ point.low }} low, {{ point.medium }} medium, {{ point.high }} high, {{ point.critical }} critical">
             <div style="display: flex; flex-direction: column-reverse; align-items: center; height: 130px; justify-content: flex-end;">
-                {% if point.critical %}<div class="trend-bar" style="background: #7f1d1d; height: {{ point.critical * 12 }}px;"></div>{% endif %}
+                {% if point.critical %}<div class="trend-bar critical" style="height: {{ point.critical * 12 }}px;"></div>{% endif %}
                 {% if point.high %}<div class="trend-bar danger" style="height: {{ point.high * 12 }}px;"></div>{% endif %}
                 {% if point.medium %}<div class="trend-bar warning" style="height: {{ point.medium * 12 }}px;"></div>{% endif %}
                 {% if point.low %}<div class="trend-bar" style="height: {{ point.low * 12 }}px;"></div>{% endif %}
@@ -102,33 +102,4 @@
     {% endif %}
 </div>
 
-<style>
-.trend-chart {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.5rem;
-    height: 160px;
-    padding: 0.5rem 0 0;
-    overflow-x: auto;
-}
-.trend-bar-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 28px;
-}
-.trend-bar {
-    width: 18px;
-    background: #10b981;
-    min-height: 2px;
-}
-.trend-bar.warning { background: #f59e0b; }
-.trend-bar.danger { background: #dc2626; }
-.trend-label {
-    font-size: 0.65rem;
-    color: var(--muted);
-    margin-top: 0.25rem;
-    white-space: nowrap;
-}
-</style>
 {% endblock %}

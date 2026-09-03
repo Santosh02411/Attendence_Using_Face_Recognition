@@ -287,13 +287,14 @@ startStream.addEventListener('click', () => startLiveDetection());
     align-items: center;
     margin-bottom: 1rem;
     padding: 1rem;
-    background: #f8fafc;
-    border-radius: 12px;
+    background: var(--card-alt);
+    border-radius: 10px;
 }
 
 .summary-stats {
     display: flex;
     gap: 2rem;
+    font-family: 'IBM Plex Mono', monospace;
 }
 
 .stat-item {
@@ -301,44 +302,27 @@ startStream.addEventListener('click', () => startLiveDetection());
 }
 
 .present-count {
-    color: #059669;
+    color: var(--status-good-fg);
 }
 
 .absent-count {
-    color: #dc2626;
+    color: var(--status-bad-fg);
 }
 
 .late-count {
-    color: #b45309;
+    color: var(--status-warn-fg);
 }
 
 .failed-count {
-    color: #b91c1c;
+    color: var(--status-bad-fg);
 }
 
 .student-row.present-row {
-    background: #f0fdf4;
+    background: var(--status-good-bg);
 }
 
 .student-row.absent-row {
-    background: #fef2f2;
-}
-
-.status-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 12px;
-    font-size: 0.85rem;
-    font-weight: 600;
-}
-
-.status-present {
-    background: #d1fae5;
-    color: #065f46;
-}
-
-.status-absent {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--status-bad-bg);
 }
 </style>
 {% endblock %}

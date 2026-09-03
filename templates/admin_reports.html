@@ -91,36 +91,4 @@
     {% endif %}
 </div>
 
-<style>
-.trend-chart {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.5rem;
-    height: 160px;
-    padding: 0.5rem 0 0;
-    overflow-x: auto;
-}
-.trend-bar-wrap {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: center;
-    min-width: 28px;
-    height: 130px;
-}
-.trend-bar {
-    width: 18px;
-    background: #10b981;
-    border-radius: 4px 4px 0 0;
-    min-height: 2px;
-}
-.trend-bar.warning { background: #f59e0b; }
-.trend-bar.danger { background: #dc2626; }
-.trend-label {
-    font-size: 0.65rem;
-    color: var(--muted);
-    margin-top: 0.25rem;
-    white-space: nowrap;
-}
-</style>
 {% endblock %}

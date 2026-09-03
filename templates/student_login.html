@@ -18,8 +18,8 @@
         <button type="submit">Login</button>
     </form>
     <div id="resultBox" class="result-box"></div>
-    <div style="margin-top: 1rem; text-align: center;">
-        <span>Not registered? </span><a href="{{ url_for('student_register') }}" style="color: var(--primary); font-weight: 600;">Register here</a>
+    <div class="portal-switch">
+        <span>Not registered? </span><a href="{{ url_for('student_register') }}">Register here</a>
     </div>
 </div>
 
@@ -85,7 +85,7 @@ function loadActiveSessions(studentId) {
                 let html = '';
                 d.sessions.forEach(session => {
                     html += `
-                    <div class="session-card" style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;">
+                    <div class="session-card">
                         <h3>${session.title}</h3>
                         <p><strong>Subject:</strong> ${session.subject_name}</p>
                         <p><strong>Available:</strong> ${session.date} to ${session.end_date}</p>
