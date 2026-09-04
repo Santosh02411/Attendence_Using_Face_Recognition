@@ -90,6 +90,15 @@
         </label>
         <button type="submit" class="button">Save Contact Info</button>
     </form>
+    {% if oauth_google_enabled %}
+    <div style="margin-top: 1rem;">
+        {% if student.oauth_google_sub %}
+            <span style="color: var(--muted);">✅ A Google account is connected for sign-in.</span>
+        {% else %}
+            <a href="{{ url_for('google_oauth_link') }}" class="button small">Connect Google Account</a>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 
 <div class="card wide-card">

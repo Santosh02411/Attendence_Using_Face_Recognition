@@ -143,17 +143,26 @@ function uploadImages() {
     .then(r => r.json())
     .then(d => {
         if (d.status === 'ok') {
-            document.getElementById('resultBox').textContent = 'SUCCESS! Student ID: ' + d.student_id + '. Redirecting to login...';
             capturedImages = [];
             document.getElementById('capturedCount').textContent = '0';
             document.getElementById('captureButton').disabled = true;
             if (stream) {
                 stream.getTracks().forEach(t => t.stop());
             }
-            // Redirect to login after 2 seconds
+            {% if oauth_google_enabled %}
+            document.getElementById('resultBox').innerHTML =
+                'SUCCESS! Student ID: ' + d.student_id + '. ' +
+                '<a href="/auth/google/link" class="button small">Connect Google Account (optional)</a> ' +
+                'or it will redirect to login shortly.';
+            setTimeout(function() {
+                window.location.href = '/student/login';
+            }, 6000);
+            {% else %}
+            document.getElementById('resultBox').textContent = 'SUCCESS! Student ID: ' + d.student_id + '. Redirecting to login...';
             setTimeout(function() {
                 window.location.href = '/student/login';
             }, 2000);
+            {% endif %}
         } else {
             document.getElementById('resultBox').textContent = 'Error: ' + (d.error || 'Unknown error');
             document.getElementById('captureButton').disabled = false;
