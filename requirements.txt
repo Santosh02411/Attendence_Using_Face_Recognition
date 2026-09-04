@@ -18,3 +18,14 @@ numpy>=1.24
 # current as of this writing (heap-overflow/DoS issues in image decoding
 # fixed across 12.2.0-12.3.0). Revisit if pip-audit flags a newer one.
 Pillow>=12.3.0
+# Google OAuth 2.0 / OIDC client for student SSO (see config.py's
+# OAUTH_GOOGLE_* settings and app.py's configure_oauth()). Pure-Python
+# and lightweight, so it's a normal dependency rather than deferred to
+# requirements-prod.txt like sentry-sdk — the SSO feature itself stays
+# opt-in via OAUTH_GOOGLE_ENABLED regardless.
+Authlib>=1.3
+# Used by notifications.py to send SMS via Twilio's plain HTTPS REST API
+# (no twilio SDK dependency needed for that). Also a transitive
+# dependency of several packages already, but listed explicitly since
+# notifications.py imports it directly.
+requests>=2.31

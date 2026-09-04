@@ -683,3 +683,119 @@ BACKUP_DIR = os.environ.get('BACKUP_DIR') or os.path.join(BASE_DIR, 'backups')
 # ever made (no automatic deletion).
 BACKUP_RETENTION_COUNT = _env_int('BACKUP_RETENTION_COUNT', 14)
 
+
+# --- Base URL (for links sent in emails) -----------------------------------
+# ENV_VAR: APP_BASE_URL
+# Used to build absolute links (password-reset links, OAuth redirect
+# construction fallback) inside outgoing emails, since a background-ish
+# request context can't always reliably infer the right public host/scheme
+# itself (e.g. behind a reverse proxy that isn't configured — see
+# BEHIND_REVERSE_PROXY above). No trailing slash. Empty by default, in
+# which case notifications.py falls back to Flask's request-derived
+# url_for(..., _external=True) when called from within a request.
+APP_BASE_URL = os.environ.get('APP_BASE_URL', '').rstrip('/')
+
+# --- Email notifications (SMTP) --------------------------------------------
+# Entirely opt-in, same pattern as Sentry above: nothing is sent anywhere
+# unless EMAIL_NOTIFICATIONS_ENABLED is on AND SMTP_HOST is set. See
+# notifications.py and the README's "Notifications" section. Every
+# public function in notifications.py degrades to a safe no-op otherwise,
+# so the rest of the app never needs to check "is email configured?"
+# before calling them.
+# ENV_VAR: EMAIL_NOTIFICATIONS_ENABLED
+EMAIL_NOTIFICATIONS_ENABLED = os.environ.get('EMAIL_NOTIFICATIONS_ENABLED', '0') == '1'
+# ENV_VAR: SMTP_HOST
+SMTP_HOST = os.environ.get('SMTP_HOST', '')
+# ENV_VAR: SMTP_PORT
+SMTP_PORT = _env_int('SMTP_PORT', 587)
+# ENV_VAR: SMTP_USERNAME
+SMTP_USERNAME = os.environ.get('SMTP_USERNAME', '')
+# ENV_VAR: SMTP_PASSWORD
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')  # nosec B105 -- env var name, not a secret value
+# ENV_VAR: SMTP_USE_TLS
+# STARTTLS on an ordinary connection (the common case for port 587).
+SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', '1') == '1'
+# ENV_VAR: SMTP_FROM_EMAIL
+SMTP_FROM_EMAIL = os.environ.get('SMTP_FROM_EMAIL', 'no-reply@attendance.local')
+# ENV_VAR: SMTP_FROM_NAME
+SMTP_FROM_NAME = os.environ.get('SMTP_FROM_NAME', 'Attendance System')
+# ENV_VAR: SMTP_TIMEOUT_SECONDS
+SMTP_TIMEOUT_SECONDS = _env_int('SMTP_TIMEOUT_SECONDS', 10)
+
+# --- SMS notifications (Twilio) ---------------------------------------------
+# Also opt-in. Uses Twilio's plain HTTPS REST API directly (via the
+# `requests` library, already a transitive dependency) rather than adding
+# the full twilio SDK as a hard dependency — matches this project's general
+# preference for no third-party dependency where a straightforward HTTPS
+# call suffices (see the /metrics endpoint's same reasoning re:
+# prometheus_client). No-op unless SMS_NOTIFICATIONS_ENABLED and all three
+# TWILIO_* values are set.
+# ENV_VAR: SMS_NOTIFICATIONS_ENABLED
+SMS_NOTIFICATIONS_ENABLED = os.environ.get('SMS_NOTIFICATIONS_ENABLED', '0') == '1'
+# ENV_VAR: TWILIO_ACCOUNT_SID
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
+# ENV_VAR: TWILIO_AUTH_TOKEN
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')  # nosec B105 -- env var name, not a secret value
+# ENV_VAR: TWILIO_FROM_NUMBER
+TWILIO_FROM_NUMBER = os.environ.get('TWILIO_FROM_NUMBER', '')
+
+# --- Notification triggers ---------------------------------------------------
+# ENV_VAR: NOTIFY_ON_ATTENDANCE_MARK
+# Sends a "your attendance was marked" email/SMS right after a successful
+# self-service Present/Late mark (see student_mark_attendance() in app.py).
+# Still governed by each student's own notify_email/notify_sms preference
+# (set on /student/profile) and by whether they have an email/phone on
+# file at all — this is a global on/off switch on top of that, not a
+# replacement for it.
+NOTIFY_ON_ATTENDANCE_MARK = os.environ.get('NOTIFY_ON_ATTENDANCE_MARK', '1') == '1'
+# ENV_VAR: NOTIFY_ON_LOW_ATTENDANCE
+# Sends a low-attendance alert the first time (see
+# LOW_ATTENDANCE_ALERT_COOLDOWN_HOURS below) a student's overall
+# percentage is found to be below LOW_ATTENDANCE_THRESHOLD_PERCENT at the
+# moment a new attendance mark is recorded.
+NOTIFY_ON_LOW_ATTENDANCE = os.environ.get('NOTIFY_ON_LOW_ATTENDANCE', '1') == '1'
+# ENV_VAR: LOW_ATTENDANCE_ALERT_COOLDOWN_HOURS
+# Minimum gap between two low-attendance alerts to the same student, so
+# a student who is repeatedly below threshold doesn't get one email per
+# attendance mark — see students.last_low_attendance_alert_at and
+# _maybe_notify_low_attendance() in app.py.
+LOW_ATTENDANCE_ALERT_COOLDOWN_HOURS = _env_int('LOW_ATTENDANCE_ALERT_COOLDOWN_HOURS', 24)
+
+# --- Self-service password reset (email) -------------------------------------
+# Student-only (there is still no email/SMTP-based recovery for the admin
+# account itself — see reset_admin_password.py and the README's "Account
+# Recovery" section for why). Requires EMAIL_NOTIFICATIONS_ENABLED and SMTP
+# to be configured; the request endpoint still behaves the same way
+# either way (a generic "if that account exists, an email was sent"
+# response, to avoid leaking which roll numbers/emails are registered) —
+# see request_student_password_reset() in app.py.
+# ENV_VAR: PASSWORD_RESET_ENABLED
+PASSWORD_RESET_ENABLED = os.environ.get('PASSWORD_RESET_ENABLED', '1') == '1'
+# ENV_VAR: PASSWORD_RESET_TOKEN_TTL_MINUTES
+PASSWORD_RESET_TOKEN_TTL_MINUTES = _env_int('PASSWORD_RESET_TOKEN_TTL_MINUTES', 30)
+# ENV_VAR: RATE_LIMIT_PASSWORD_RESET
+RATE_LIMIT_PASSWORD_RESET = os.environ.get('RATE_LIMIT_PASSWORD_RESET', '5 per minute')
+
+# --- SSO / institutional login (Google OAuth 2.0 / OIDC) ---------------------
+# Entirely opt-in and student-only for now (see README's "SSO /
+# Institutional Login" section for the reasoning and its honest limits).
+# Uses Authlib's Flask integration. Off unless OAUTH_GOOGLE_ENABLED is set
+# AND both client credentials are present — see configure_oauth() in
+# app.py, which follows the same lazy-import, safe-no-op pattern as
+# error_reporting.init_sentry().
+#
+# An OAuth login only ever logs in an EXISTING student account, matched by
+# email (students.email must already be set on the account, e.g. from
+# /student/profile) — it deliberately does not auto-create accounts, since
+# this project's registration flow also captures face-enrollment data that
+# an OAuth login can't provide.
+# ENV_VAR: OAUTH_GOOGLE_ENABLED
+OAUTH_GOOGLE_ENABLED = os.environ.get('OAUTH_GOOGLE_ENABLED', '0') == '1'
+# ENV_VAR: OAUTH_GOOGLE_CLIENT_ID
+OAUTH_GOOGLE_CLIENT_ID = os.environ.get('OAUTH_GOOGLE_CLIENT_ID', '')
+# ENV_VAR: OAUTH_GOOGLE_CLIENT_SECRET
+OAUTH_GOOGLE_CLIENT_SECRET = os.environ.get('OAUTH_GOOGLE_CLIENT_SECRET', '')  # nosec B105 -- env var name, not a secret value
+# ENV_VAR: OAUTH_GOOGLE_DISCOVERY_URL
+OAUTH_GOOGLE_DISCOVERY_URL = os.environ.get(
+    'OAUTH_GOOGLE_DISCOVERY_URL', 'https://accounts.google.com/.well-known/openid-configuration'
+)

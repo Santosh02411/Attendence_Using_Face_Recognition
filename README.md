@@ -15,6 +15,9 @@ A comprehensive attendance management system powered by face recognition technol
 - [Attendance Workflow](#-attendance-workflow)
 - [Face Enrollment & Biometric Management](#-face-enrollment--biometric-management)
 - [Security Monitoring](#️-security-monitoring)
+- [Notifications](#-notifications)
+- [Self-Service Password Reset](#-self-service-password-reset)
+- [SSO / Institutional Login](#-sso--institutional-login)
 - [Configuration](#-configuration)
 - [Database Schema](#-database-schema)
 - [User Interface](#-user-interface)
@@ -38,6 +41,9 @@ A comprehensive attendance management system powered by face recognition technol
 - **Attendance Workflow**: Present/Absent/Late status, a late-entry rule with a configurable grace period, admin manual editing (add/remove/change, with a reason) and an attendance freeze after a configurable window, a student correction-request workflow with admin approve/reject, and filterable subject/date-range/semester reports with percentage warnings and a trend chart — see "Attendance Workflow" below
 - **Face Enrollment & Biometric Management**: Per-photo enrollment quality scores, an enrollment status (Not Enrolled/Pending/Complete) with automatic re-enrollment reminders, individual photo removal and a full re-enrollment workflow, embedding model versioning, and admin-panel recognition threshold configuration — see "Face Enrollment & Biometric Management" below
 - **Security Monitoring**: Device fingerprinting and suspicious-device detection, concurrent-session and network-change/impossible-location detection, per-student risk scoring with automatic escalation, admin security notifications, Low/Medium/High/Critical severity levels, a security dashboard with trends, and configurable security policies — see "Security Monitoring" below
+- **Notifications**: Opt-in email (SMTP) and SMS (Twilio) alerts when a student's attendance is marked and when their overall attendance drops below the low-attendance threshold — see "Notifications" below
+- **Self-Service Password Reset**: A student who has an email on file can reset their own forgotten password via an emailed, single-use, expiring link — no admin needed — see "Self-Service Password Reset" below
+- **SSO / Institutional Login**: Optional "Sign in with Google" for students, linked to an existing account by email — see "SSO / Institutional Login" below
 - **Real-time Recognition**: Live face detection and recognition during attendance sessions
 - **Bulk Student Import**: Onboard a whole class at once via CSV upload (name/roll number/branch/semester, with auto-generated temporary passwords); each student adds their own face photos afterward
 - **Export Functionality**: Export attendance records, session rosters, and attendance reports as CSV files
@@ -136,6 +142,7 @@ Attendance_Using_Face_Recognition/
 ├── restore.py                      # Restores a backup.py archive back into place
 ├── logging_config.py               # Structured (JSON) logging + request-id plumbing — see "Structured Logging"
 ├── error_reporting.py              # Optional Sentry integration — see "Error Alerting"
+├── notifications.py                 # Optional email/SMS alerts — see "Notifications"
 ├── face_security.py                 # Active liveness challenges + anti-spoof heuristics — see "Anti-Proxy / Face Recognition Security"
 ├── wsgi.py                         # Production WSGI entrypoint (gunicorn/waitress) — see "Deployment"
 ├── gunicorn.conf.py                # Gunicorn server tuning (workers, timeouts, JSON logging)
@@ -174,12 +181,14 @@ Attendance_Using_Face_Recognition/
 │   ├── attendance_session.html   # Live attendance session (admin)
 │   ├── student_register.html     # Student registration
 │   ├── student_register_face.html # Add face photos to an existing (e.g. bulk-imported) account
-│   ├── student_login.html        # Student login (+ CAPTCHA)
+│   ├── student_login.html        # Student login (+ CAPTCHA, forgot-password link, optional Google sign-in)
+│   ├── student_forgot_password.html # Request a password-reset email
+│   ├── student_reset_password.html  # Set a new password from an emailed link
 │   ├── student_profile.html      # Student account details + self password change
 │   ├── student_attend.html       # Student self-service attendance marking
 │   └── student_history.html      # Attendance history
 ├── static/                        # CSS and shared JS (styles.css, app.js)
-├── tests/                          # pytest test suite (180 tests) — see "Running Tests"
+├── tests/                          # pytest test suite (447 tests) — see "Running Tests"
 └── archive/                       # Superseded standalone CLI scripts, kept
     └── legacy_scripts/            # for reference only — not used by app.py
 ```
@@ -598,6 +607,120 @@ plainly in each feature below rather than oversold.
   DB-backed override mechanism as `/admin/recognition-settings`, no
   restart needed, each individually resettable to its `.env` default.
 
+## 🔔 Notifications
+
+Optional email (SMTP, via the standard library's `smtplib`) and SMS (via
+Twilio's plain HTTPS REST API — no `twilio` SDK dependency needed) alerts,
+handled by `notifications.py` following the same opt-in, safe-no-op
+pattern as Sentry error alerting (see `error_reporting.py`): nothing is
+sent anywhere unless explicitly enabled and configured.
+
+- **Attendance-marked notification** — right after a successful
+  self-service Present/Late mark, `notify_attendance_marked()` emails/
+  texts the student, if `NOTIFY_ON_ATTENDANCE_MARK` is on (default) and
+  the student has an email/phone on file with their own
+  `notify_email`/`notify_sms` preference also on (set from
+  `/student/profile`).
+- **Low-attendance alert** — after each mark, `_maybe_notify_low_attendance()`
+  in `app.py` checks the student's overall percentage; if it's below
+  `LOW_ATTENDANCE_THRESHOLD_PERCENT`, it sends an alert — but no more
+  than once per `LOW_ATTENDANCE_ALERT_COOLDOWN_HOURS` (tracked in
+  `students.last_low_attendance_alert_at`), so a persistently-low-
+  attendance student isn't emailed after every single subsequent mark.
+- **Per-student opt-out** — `notify_email`/`notify_sms` (default on
+  once an email/phone is added) are editable from `/student/profile`,
+  independent of the two global switches above.
+- **Where email/phone come from** — optional fields at registration
+  (`/student/register`), optional CSV columns at bulk import
+  (`email`/`phone_number`), or added later from `/student/profile`.
+  Neither is required for anything else in the app to work.
+
+Configure via `EMAIL_NOTIFICATIONS_ENABLED` + `SMTP_HOST`/`SMTP_PORT`/
+`SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_USE_TLS`/`SMTP_FROM_EMAIL`/
+`SMTP_FROM_NAME`, and/or `SMS_NOTIFICATIONS_ENABLED` +
+`TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_FROM_NUMBER` — see
+`.env.example`. A failed send is logged and swallowed; it never breaks
+the attendance-marking (or password-reset) request that triggered it.
+
+## 🔑 Self-Service Password Reset
+
+A student who has added an email to their account (see "Notifications"
+above) can reset their own forgotten password without an admin, from
+`/student/forgot-password`:
+
+1. The student submits their roll number and the email on file. The
+   response message is the same generic
+   *"if that account exists and has an email on file, a link was sent"*
+   regardless of whether they actually matched — this is deliberate, to
+   avoid letting the form be used to enumerate registered roll numbers
+   or which accounts have an email set (the audit log still records an
+   unmatched attempt, just without naming which roll number it was for).
+2. On a match, a random token (`secrets.token_urlsafe(32)`) is generated;
+   only its SHA-256 hash is stored in `password_reset_tokens`, alongside
+   an expiry (`PASSWORD_RESET_TOKEN_TTL_MINUTES`, default 30) — the same
+   "never store the usable secret itself" principle as password hashing.
+3. `notifications.send_password_reset_email()` emails a link containing
+   the raw token: `/student/reset-password/<token>`.
+4. Visiting that link (while unexpired and unused) lets the student set
+   a new password, subject to the same `validate_password_strength()`
+   policy as registration. The token is marked used immediately —
+   reusing the link afterward is rejected the same way an expired one is.
+
+This is **student-only**. The admin account still has no self-service
+"forgot password" (see "Account Recovery" below) — `python
+reset_admin_password.py <username>` from the server remains the only
+recovery path for a locked-out admin, since granting the same emailed-
+link mechanism to the single admin account would be a much higher-value
+target for the same SMTP credentials.
+
+Toggle with `PASSWORD_RESET_ENABLED` (default on); rate-limited per IP
+via `RATE_LIMIT_PASSWORD_RESET` (default 5/minute) the same way login is.
+If `EMAIL_NOTIFICATIONS_ENABLED`/SMTP aren't configured, the request
+endpoint still "succeeds" with the same generic message (nothing here
+should reveal whether email is even set up), but no email actually goes
+out — a token is issued but the student never receives its link, so in
+practice this feature needs email configured to be useful end-to-end.
+
+## 🔐 SSO / Institutional Login
+
+Optional "Sign in with Google" for students, via
+[Authlib](https://docs.authlib.org/)'s OAuth 2.0 / OIDC client
+(`configure_oauth()` in `app.py`, following the same lazy-import,
+safe-no-op pattern as `error_reporting.init_sentry()` — an unconfigured
+deployment just doesn't show the button and its routes redirect back to
+the login page with a flash message, rather than erroring).
+
+**Deliberately does not auto-create accounts.** A Google sign-in only
+ever logs into an **existing** student account, matched by email:
+
+1. `/auth/google/login` redirects to Google's consent screen.
+2. `/auth/google/callback` receives the authorization code, exchanges it
+   for the signed-in user's email and stable Google account id (`sub`).
+3. If a student record's `oauth_google_sub` already matches, that's an
+   instant match. Otherwise, it looks for a student whose `email` column
+   (see "Notifications" above) matches, case-insensitively — and if
+   found, links `oauth_google_sub` to that account for next time.
+4. No match on either → the student is told to register normally (which
+   captures face-enrollment data an OAuth login can't provide) or to add
+   this email to their existing account from `/student/profile` first.
+
+This keeps registration's face-capture step mandatory for every account
+while still letting an institution's Google Workspace accounts serve as
+a second, no-separate-password way to log into an *already-registered*
+account. The same account-lockout check as password login applies
+(`_is_locked_out`), and successful OAuth logins run through the same
+security-monitoring pipeline as a password login (concurrent-session,
+network-change detection, risk-based escalation — see "Security
+Monitoring" above), minus the device-fingerprint signal (there's no
+client-side JS fingerprint step in the OAuth redirect flow).
+
+Configure via `OAUTH_GOOGLE_ENABLED=1`, `OAUTH_GOOGLE_CLIENT_ID`, and
+`OAUTH_GOOGLE_CLIENT_SECRET` (from a Google Cloud Console OAuth 2.0
+"Web application" client) — the authorized redirect URI to register with
+Google is `<your-deployment-url>/auth/google/callback`. Only Google is
+implemented; a SAML/generic-OIDC/institutional-LDAP path is not (see
+"Future Enhancements" below).
+
 ## 🔧 Configuration
 
 ### Database Setup
@@ -704,6 +827,26 @@ Alerting", and "Backup & Restore" below for the full picture:
 - **Backups**: `BACKUP_DIR` (default `./backups`), `BACKUP_RETENTION_COUNT`
   (default 14, `0` = keep forever)
 
+### Notifications, Password Reset & SSO Settings
+Also in `config.py` / `.env.example` — see "Notifications",
+"Self-Service Password Reset", and "SSO / Institutional Login" above:
+- **Base URL for emailed links**: `APP_BASE_URL`
+- **Email (SMTP)**: `EMAIL_NOTIFICATIONS_ENABLED` (default off),
+  `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USERNAME`, `SMTP_PASSWORD`,
+  `SMTP_USE_TLS` (default on), `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`,
+  `SMTP_TIMEOUT_SECONDS` (10)
+- **SMS (Twilio)**: `SMS_NOTIFICATIONS_ENABLED` (default off),
+  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
+- **Notification triggers**: `NOTIFY_ON_ATTENDANCE_MARK` (default on),
+  `NOTIFY_ON_LOW_ATTENDANCE` (default on),
+  `LOW_ATTENDANCE_ALERT_COOLDOWN_HOURS` (24)
+- **Password reset**: `PASSWORD_RESET_ENABLED` (default on),
+  `PASSWORD_RESET_TOKEN_TTL_MINUTES` (30), `RATE_LIMIT_PASSWORD_RESET`
+  (`5 per minute`)
+- **Google SSO**: `OAUTH_GOOGLE_ENABLED` (default off),
+  `OAUTH_GOOGLE_CLIENT_ID`, `OAUTH_GOOGLE_CLIENT_SECRET`,
+  `OAUTH_GOOGLE_DISCOVERY_URL`
+
 ## 📊 Database Schema
 
 ### Main Tables
@@ -712,9 +855,13 @@ Alerting", and "Backup & Restore" below for the full picture:
 - **students**: Student information and credentials, plus login lockout
   tracking (`failed_attempts`, `locked_until`), attendance-marking
   abuse lockout tracking (`attendance_security_failures`,
-  `attendance_locked_until`), and security monitoring state
+  `attendance_locked_until`), security monitoring state
   (`last_login_ip`, `last_login_at`, `security_escalated`,
-  `security_escalated_at`) — see "Security Monitoring"
+  `security_escalated_at`) — see "Security Monitoring" — and optional
+  contact/notification/SSO fields (`email`, `phone_number`,
+  `notify_email`, `notify_sms`, `last_low_attendance_alert_at`,
+  `oauth_google_sub`) — see "Notifications" and "SSO / Institutional
+  Login"
 - **subjects**: Subject/course information
 - **sessions**: Attendance session details, plus lifecycle (`status`,
   `cancelled_at`, `cancellation_reason`) and optional per-session
@@ -742,6 +889,10 @@ Alerting", and "Backup & Restore" below for the full picture:
 - **audit_log**: Timestamped record of logins, lockouts, spoof/liveness
   events, session lifecycle changes, face-enrollment changes,
   device/network/session anomalies, and admin-initiated changes
+- **password_reset_tokens**: One row per issued self-service
+  password-reset link — a SHA-256 hash of the token (never the raw
+  token), an expiry, and a used-once marker — see "Self-Service
+  Password Reset"
 
 ### Face Recognition Tables
 - **people**: Face profile information linked to student IDs
@@ -889,9 +1040,15 @@ it for anything beyond a class project or internal tool):
   originate from an allowed network
 - No HTTPS/TLS is configured here — that's the deploying environment's
   responsibility (e.g. a reverse proxy)
-- No self-service "forgot password" for a student who doesn't remember
-  their current password (see Account Recovery above — an admin-assisted
-  reset is still required as the first step)
+- No self-service "forgot password" for the **admin** account — that
+  still requires `python reset_admin_password.py` from the server (see
+  "Account Recovery" above). Students do have self-service reset now
+  (see "Self-Service Password Reset"), but only if they've added an
+  email to their account first.
+- SSO covers Google only, and only as a login method for an **already-
+  registered** student account matched by email — there's no SAML/
+  generic-OIDC support, and it can't substitute for registration's
+  face-enrollment step (see "SSO / Institutional Login")
 
 ## 🚨 Troubleshooting
 
@@ -948,7 +1105,7 @@ The application includes debug features:
 
 ## ✅ Running Tests
 
-The test suite (180 tests) covers authentication (password hashing, login
+The test suite (447 tests) covers authentication (password hashing, login
 flows, account lockout), CSRF protection, rate limiting, CAPTCHA,
 password strength policy, self-service and admin-assisted password
 changes, SQL-injection resistance, the embedding-based face recognition
@@ -956,9 +1113,12 @@ core (computation, matching, gallery storage/deletion), face alignment,
 multi-face rejection, blink-based liveness, registration image quality
 checks, IP allowlisting, request size limits, admin account management,
 the audit log, the student profile page, bulk CSV import, session
-overlap detection, pagination, reverse-proxy IP handling, and the
+overlap detection, pagination, reverse-proxy IP handling, the
 attendance-marking security properties (session-derived identity, 1:1
-verification, no cross-identity leakage).
+verification, no cross-identity leakage), and the notifications/
+password-reset/SSO additions (safe-no-op behavior when unconfigured,
+token issuance/expiry/single-use, and the email-matching/no-auto-create
+rule for Google sign-in — see `tests/test_notifications_and_sso.py`).
 
 Every test runs against a temporary, isolated database and Datasets
 folder — the suite never touches your real `database/` or `Datasets/`.
@@ -1426,12 +1586,13 @@ to `archive/legacy_scripts/` for reference — see `archive/README.md`.
 - [ ] Mobile application
 - [ ] Cloud storage integration
 - [ ] Deeper analytics (cohort comparisons, predictive risk scoring) beyond the current subject/date-range/semester reports
-- [ ] SMS/email notifications (e.g. notifying a student when their attendance is marked — the low-attendance alert now shows directly on the student's own profile/history, but there's still no push notification without email/SMS)
+- [x] ~~SMS/email notifications~~ — done: see "Notifications" (opt-in SMTP email + Twilio SMS for attendance marks and low-attendance alerts)
 - [ ] Biometric integration (fingerprint, iris)
 - [ ] AI-powered attendance predictions
 - [ ] Browser/E2E test coverage (the current suite is unit/integration level, mocking the camera pipeline)
-- [ ] SSO/institutional login (only this app's own username/password today)
+- [x] ~~SSO/institutional login~~ — partially done: see "SSO / Institutional Login" (Google only, login-only for an existing account, no SAML/generic-OIDC yet)
 - [ ] A path to Postgres/concurrent-write scaling beyond the current single-SQLite-file design
+- [ ] SAML/generic-OIDC/LDAP SSO providers beyond Google, and OAuth-based self-registration (currently login-only, matched to an existing account by email)
 
 ## 🤝 Contributing
 

@@ -1,11 +1,13 @@
 import base64
 import contextlib
 import csv
+import hashlib
 import io
 import ipaddress
 import logging
 import os
 import random
+import re
 import secrets
 import sqlite3
 import string
@@ -45,6 +47,7 @@ import db_migrations
 import error_reporting
 import face_security
 import logging_config
+import notifications
 
 logging_config.configure_app_logging(level=cfg.LOG_LEVEL, fmt=cfg.LOG_FORMAT)
 logger = logging.getLogger('attendance_app')
@@ -139,6 +142,46 @@ app.config['CAPTCHA_ENABLED'] = cfg.CAPTCHA_ENABLED
 # hidden csrf_token field; JS fetch() calls send it via the X-CSRFToken
 # header (see the csrfHeaders() helper in static/app.js).
 csrf = CSRFProtect(app)
+
+
+def configure_oauth(flask_app):
+    """Registers the Google OAuth client if SSO is configured, following
+    the same lazy-import, safe-no-op pattern as
+    error_reporting.init_sentry(): a deployment that hasn't set
+    OAUTH_GOOGLE_ENABLED (or is missing either client credential) gets
+    None back and /auth/google/login just tells the user SSO isn't
+    configured, rather than the app failing to start. authlib is a
+    lightweight, pure-Python dependency (see requirements.txt) so it's
+    always installed, but the credentials/flag are what's actually
+    opt-in here.
+    """
+    if not cfg.OAUTH_GOOGLE_ENABLED:
+        logger.info('OAUTH_GOOGLE_ENABLED is off — Google SSO is disabled.')
+        return None
+    if not cfg.OAUTH_GOOGLE_CLIENT_ID or not cfg.OAUTH_GOOGLE_CLIENT_SECRET:
+        logger.warning('OAUTH_GOOGLE_ENABLED is set but OAUTH_GOOGLE_CLIENT_ID/'
+                        'OAUTH_GOOGLE_CLIENT_SECRET are missing — Google SSO stays disabled.')
+        return None
+    try:
+        from authlib.integrations.flask_client import OAuth
+    except ImportError:
+        logger.warning('OAUTH_GOOGLE_ENABLED is set but the authlib package is not installed. '
+                        'Install it (see requirements.txt) to enable Google SSO. Continuing without it.')
+        return None
+
+    oauth_registry = OAuth(flask_app)
+    oauth_registry.register(
+        name='google',
+        client_id=cfg.OAUTH_GOOGLE_CLIENT_ID,
+        client_secret=cfg.OAUTH_GOOGLE_CLIENT_SECRET,
+        server_metadata_url=cfg.OAUTH_GOOGLE_DISCOVERY_URL,
+        client_kwargs={'scope': 'openid email profile'},
+    )
+    logger.info('Google SSO enabled.')
+    return oauth_registry
+
+
+oauth = configure_oauth(app)
 
 # Per-IP rate limiting on top of (not instead of) the per-account lockout
 # below: rate limiting throttles a single IP regardless of which account
@@ -951,6 +994,47 @@ def _insert_attendance_if_absent(student_id, session_id, status, timestamp, note
     return inserted
 
 
+def _maybe_notify_low_attendance(student_id):
+    """After a new attendance mark, checks whether the student's overall
+    percentage is below LOW_ATTENDANCE_THRESHOLD_PERCENT and — if so and
+    NOTIFY_ON_LOW_ATTENDANCE is on — sends an alert, but no more than
+    once per LOW_ATTENDANCE_ALERT_COOLDOWN_HOURS (tracked in
+    students.last_low_attendance_alert_at) so a persistently-low-
+    attendance student isn't emailed on every single subsequent mark.
+    Best-effort: any failure here is logged and swallowed, same as the
+    notifications module's own send functions, so it can never break the
+    attendance-marking response that triggered it."""
+    if not cfg.NOTIFY_ON_LOW_ATTENDANCE:
+        return
+    try:
+        student = query_db('SELECT * FROM students WHERE id=?', (student_id,), one=True)
+        if not student:
+            return
+        rows = query_db('SELECT status FROM attendance WHERE student_id=?', (student_id,))
+        total = len(rows)
+        if total == 0:
+            return
+        present = len([r for r in rows if _attendance_counts_as_present(r['status'])])
+        percentage = round((present / total) * 100, 1)
+        if percentage >= cfg.LOW_ATTENDANCE_THRESHOLD_PERCENT:
+            return
+
+        last_alert = student['last_low_attendance_alert_at']
+        if last_alert:
+            try:
+                elapsed_hours = (datetime.now() - datetime.fromisoformat(last_alert)).total_seconds() / 3600
+                if elapsed_hours < cfg.LOW_ATTENDANCE_ALERT_COOLDOWN_HOURS:
+                    return
+            except ValueError:
+                pass  # malformed timestamp — treat as never-alerted rather than blocking the alert
+
+        notifications.notify_low_attendance(student, percentage, cfg.LOW_ATTENDANCE_THRESHOLD_PERCENT)
+        execute_db('UPDATE students SET last_low_attendance_alert_at=? WHERE id=?',
+                   (datetime.now().isoformat(), student_id))
+    except Exception as e:
+        logger.warning(f'Low-attendance notification check failed for student {student_id}: {e}')
+
+
 def _compute_attendance_report(subject_id=None, start_date=None, end_date=None, semester=None, trend_granularity='day'):
     """Builds the data for /admin/reports: a per-student attendance
     summary over the filtered sessions, plus a time-bucketed class-wide
@@ -1104,6 +1188,33 @@ def validate_password_strength(password):
         if not (has_letter and has_digit):
             return 'Password must contain at least one letter and one number.'
     return None
+
+
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+
+def _is_valid_email(value):
+    """Deliberately loose format check (RFC 5322 in full is far more
+    permissive than most people expect) — good enough to catch a typo
+    without rejecting a legitimate address; the only way to actually
+    verify an email is to send to it, which the password-reset/
+    notification flows already do."""
+    return bool(value) and bool(_EMAIL_RE.match(value))
+
+
+def _normalize_contact_fields(email, phone_number):
+    """Trims and lightly validates optional email/phone input shared by
+    registration, bulk import, and the profile contact-info form.
+    Returns (email_or_none, phone_or_none, error_or_none)."""
+    email = (email or '').strip() or None
+    phone_number = (phone_number or '').strip() or None
+    if email and not _is_valid_email(email):
+        return None, None, 'Please enter a valid email address.'
+    if email and len(email) > 254:
+        return None, None, 'Email address is too long.'
+    if phone_number and len(phone_number) > 32:
+        return None, None, 'Phone number is too long.'
+    return email, phone_number, None
 
 
 _embedder_net = None
@@ -2124,9 +2235,17 @@ def bulk_import_students():
         branch = (row.get('branch') or '').strip()
         semester = (row.get('semester') or '').strip()
         password = (row.get('password') or '').strip()
+        # Optional columns — a bulk-imported student can also add these
+        # later from /student/profile (see "Notifications" in the README).
+        email, phone_number, contact_error = _normalize_contact_fields(
+            row.get('email'), row.get('phone_number') or row.get('phone')
+        )
 
         if not name or not roll_no or not branch or not semester:
             skipped.append({'row': i, 'roll_no': roll_no or '(blank)', 'reason': 'missing required field(s)'})
+            continue
+        if contact_error:
+            skipped.append({'row': i, 'roll_no': roll_no, 'reason': contact_error})
             continue
         if roll_no in existing_roll_numbers:
             skipped.append({'row': i, 'roll_no': roll_no, 'reason': 'roll number already registered'})
@@ -2146,8 +2265,9 @@ def bulk_import_students():
                 continue
 
         student_id = execute_db(
-            'INSERT INTO students(name, roll_no, branch, semester, password) VALUES(?, ?, ?, ?, ?)',
-            (name, roll_no, branch, semester, generate_password_hash(password))
+            'INSERT INTO students(name, roll_no, branch, semester, password, email, phone_number) '
+            'VALUES(?, ?, ?, ?, ?, ?, ?)',
+            (name, roll_no, branch, semester, generate_password_hash(password), email, phone_number)
         )
         seen_in_file.add(roll_no)
         created.append({
@@ -2168,9 +2288,9 @@ def bulk_import_template():
         return redirect(url_for('login'))
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(['name', 'roll_no', 'branch', 'semester', 'password'])
-    writer.writerow(['Jane Doe', '21CS001', 'CSE', '5', ''])
-    writer.writerow(['John Smith', '21CS002', 'CSE', '5', 'OptionalPass123'])
+    writer.writerow(['name', 'roll_no', 'branch', 'semester', 'password', 'email', 'phone_number'])
+    writer.writerow(['Jane Doe', '21CS001', 'CSE', '5', '', 'jane.doe@example.edu', ''])
+    writer.writerow(['John Smith', '21CS002', 'CSE', '5', 'OptionalPass123', '', '+15551234567'])
     response = Response(buf.getvalue(), mimetype='text/csv')
     response.headers['Content-Disposition'] = 'attachment; filename=student_import_template.csv'
     return response
@@ -3221,6 +3341,15 @@ def student_register():
         password = data.get('password')
         gender = data.get('gender', 'other')
         images = data.get('images', [])
+        # Optional contact info (see "Notifications" and "Self-Service
+        # Password Reset" in the README) — a student can also add these
+        # later from /student/profile, so neither is required at
+        # registration time.
+        email, phone_number, contact_error = _normalize_contact_fields(
+            data.get('email'), data.get('phone_number')
+        )
+        if contact_error:
+            return jsonify({'error': contact_error}), 400
         if not name or not roll_no or not branch or not semester or not password or not images:
             return jsonify({'error': 'Missing fields'}), 400
 
@@ -3270,7 +3399,11 @@ def student_register():
             if existing_student:
                 return jsonify({'error': f'Face already registered to {existing_student["name"]} ({existing_student["roll_no"]})'}), 400
 
-        student_id = execute_db('INSERT INTO students(name, roll_no, branch, semester, password) VALUES(?, ?, ?, ?, ?)', (name, roll_no, branch, semester, generate_password_hash(password)))
+        student_id = execute_db(
+            'INSERT INTO students(name, roll_no, branch, semester, password, email, phone_number) '
+            'VALUES(?, ?, ?, ?, ?, ?, ?)',
+            (name, roll_no, branch, semester, generate_password_hash(password), email, phone_number)
+        )
         save_face_profile(student_id, name, gender, branch)
         saved, skip_reasons = save_face_images(student_id, images)
         if saved == 0:
@@ -3325,35 +3458,203 @@ def student_login():
             return jsonify({'status': 'error', 'message': 'Incorrect password'}), 401
 
         _clear_failed_logins('students', student['id'])
-        session.clear()
-        session.permanent = True
-        session['student_id'] = student['id']
-        session['student_name'] = student['name']
-        session['user_type'] = 'student'
-        log_audit('student', roll_no, 'student_login_success')
-
-        # Security monitoring: device fingerprinting, network-change/
-        # concurrent-session detection, and risk-based escalation — see
-        # the helpers' docstrings above student_login(). fingerprint is
-        # a lightweight, self-hosted hash computed client-side (see
-        # static/app.js's getDeviceFingerprint()); its absence (an old
-        # cached page, or a client that blocks it) just means those
-        # specific checks are skipped for this login, not an error.
         fingerprint_hash = (data.get('device_fingerprint') or '').strip()[:128] or None
-        ip_address = request.remote_addr
-        _check_suspicious_device(student['id'], fingerprint_hash, ip_address, request.user_agent.string[:255])
-        _check_network_change(student['id'], ip_address)
-        _check_concurrent_session(student['id'], ip_address, fingerprint_hash)
-        session['login_token'] = _start_login_session(student['id'], ip_address, fingerprint_hash)
-        execute_db('UPDATE students SET last_login_ip=?, last_login_at=? WHERE id=?',
-                   (ip_address, datetime.now().isoformat(), student['id']))
-        _maybe_escalate_student(student['id'])
+        _establish_student_session(student, roll_no, fingerprint_hash, login_event='student_login_success')
 
         student_data = dict(student)
         student_data.pop('password', None)  # never send the password hash to the client
         return jsonify({'status': 'ok', 'student': student_data})
 
-    return render_template('student_login.html', logged_in=False)
+    return render_template('student_login.html', logged_in=False, oauth_google_enabled=bool(oauth))
+
+
+def _establish_student_session(student, roll_no, fingerprint_hash, login_event):
+    """Shared post-authentication setup used by both password-based
+    student_login() and the Google OAuth callback below — starts the
+    Flask session, logs the audit event, and runs the same security-
+    monitoring checks (device fingerprinting, network-change/
+    concurrent-session detection, risk-based escalation) either login
+    path goes through. fingerprint_hash may be None (e.g. an OAuth login
+    has no client-side fingerprint step) — the checks that depend on it
+    just skip cleanly, same as an old cached page/blocking client would
+    for the password-login path.
+    """
+    session.clear()
+    session.permanent = True
+    session['student_id'] = student['id']
+    session['student_name'] = student['name']
+    session['user_type'] = 'student'
+    log_audit('student', roll_no, login_event)
+
+    ip_address = request.remote_addr
+    user_agent = request.user_agent.string[:255] if request.user_agent else None
+    _check_suspicious_device(student['id'], fingerprint_hash, ip_address, user_agent)
+    _check_network_change(student['id'], ip_address)
+    _check_concurrent_session(student['id'], ip_address, fingerprint_hash)
+    session['login_token'] = _start_login_session(student['id'], ip_address, fingerprint_hash)
+    execute_db('UPDATE students SET last_login_ip=?, last_login_at=? WHERE id=?',
+               (ip_address, datetime.now().isoformat(), student['id']))
+    _maybe_escalate_student(student['id'])
+
+
+@app.route('/student/forgot-password', methods=['GET', 'POST'])
+@limiter.limit(lambda: cfg.RATE_LIMIT_PASSWORD_RESET, methods=['POST'])
+def student_forgot_password():
+    """Self-service password-reset request (see README's "Self-Service
+    Password Reset" section). Always shows the same generic confirmation
+    message regardless of whether the roll number/email actually
+    matched an account with an email on file — this avoids letting the
+    form be used to enumerate which roll numbers are registered or which
+    accounts have an email set."""
+    if not cfg.PASSWORD_RESET_ENABLED:
+        flash('Self-service password reset is not enabled. Please contact an administrator.', 'error')
+        return render_template('student_forgot_password.html')
+
+    if request.method == 'POST':
+        roll_no = (request.form.get('roll_no') or '').strip()
+        email = (request.form.get('email') or '').strip()
+        generic_message = (
+            'If that account exists and has an email on file, a password reset link has been sent to it.'
+        )
+
+        student = query_db('SELECT * FROM students WHERE roll_no=?', (roll_no,), one=True)
+        if student and student['email'] and email.lower() == student['email'].lower():
+            raw_token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+            expires_at = datetime.now() + timedelta(minutes=cfg.PASSWORD_RESET_TOKEN_TTL_MINUTES)
+            execute_db(
+                'INSERT INTO password_reset_tokens(student_id, token_hash, created_at, expires_at, requested_ip) '
+                'VALUES(?, ?, ?, ?, ?)',
+                (student['id'], token_hash, datetime.now().isoformat(), expires_at.isoformat(), request.remote_addr)
+            )
+            reset_url = url_for('student_reset_password', token=raw_token, _external=True)
+            notifications.send_password_reset_email(student, reset_url)
+            log_audit('student', roll_no, 'student_password_reset_requested')
+        else:
+            # Deliberately no audit entry naming a roll number that
+            # didn't match — that itself would be an enumeration log,
+            # even if the response to the user stays generic.
+            log_audit('anonymous', roll_no or '(blank)', 'student_password_reset_requested_unmatched')
+
+        flash(generic_message, 'success')
+        return redirect(url_for('student_forgot_password'))
+
+    return render_template('student_forgot_password.html')
+
+
+@app.route('/student/reset-password/<token>', methods=['GET', 'POST'])
+@limiter.limit(lambda: cfg.RATE_LIMIT_PASSWORD_RESET, methods=['POST'])
+def student_reset_password(token):
+    """Completes a password reset from the link emailed by
+    student_forgot_password(). The raw token from the URL is never
+    stored — only its SHA-256 hash is compared against
+    password_reset_tokens, same principle as password hashing itself:
+    a leaked database dump doesn't hand over usable reset links."""
+    token_hash = hashlib.sha256((token or '').encode('utf-8')).hexdigest()
+    token_row = query_db('SELECT * FROM password_reset_tokens WHERE token_hash=?', (token_hash,), one=True)
+
+    def _token_invalid():
+        return (
+            not token_row
+            or token_row['used_at']
+            or datetime.fromisoformat(token_row['expires_at']) < datetime.now()
+        )
+
+    if _token_invalid():
+        flash('This password reset link is invalid or has expired. Please request a new one.', 'error')
+        return redirect(url_for('student_forgot_password'))
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if new_password != confirm_password:
+            flash('New password and confirmation do not match.', 'error')
+            return render_template('student_reset_password.html', token=token)
+
+        password_error = validate_password_strength(new_password)
+        if password_error:
+            flash(password_error, 'error')
+            return render_template('student_reset_password.html', token=token)
+
+        student = query_db('SELECT * FROM students WHERE id=?', (token_row['student_id'],), one=True)
+        if not student:
+            flash('Student record not found.', 'error')
+            return redirect(url_for('student_forgot_password'))
+
+        execute_db('UPDATE students SET password=? WHERE id=?', (generate_password_hash(new_password), student['id']))
+        execute_db('UPDATE password_reset_tokens SET used_at=? WHERE id=?', (datetime.now().isoformat(), token_row['id']))
+        _clear_failed_logins('students', student['id'])
+        log_audit('student', student['roll_no'], 'student_password_reset_completed')
+        flash('Your password has been reset. You can now log in.', 'success')
+        return redirect(url_for('student_login'))
+
+    return render_template('student_reset_password.html', token=token)
+
+
+@app.route('/auth/google/login')
+def google_oauth_login():
+    """Starts the Google OAuth 2.0 / OIDC flow for student SSO (see
+    README's "SSO / Institutional Login" section). A no-op redirect back
+    to the login page with a flash message if SSO isn't configured,
+    rather than a 500 — same "friendly degrade" philosophy as the rest
+    of this project's optional integrations."""
+    if not oauth:
+        flash('Sign-in with Google is not configured for this deployment.', 'error')
+        return redirect(url_for('student_login'))
+    redirect_uri = url_for('google_oauth_callback', _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
+
+
+@app.route('/auth/google/callback')
+def google_oauth_callback():
+    """Handles the redirect back from Google. Only ever logs in an
+    EXISTING student account, matched by email — see OAUTH_GOOGLE_ENABLED's
+    comment in config.py for why this deliberately doesn't auto-create
+    accounts. The Google account's stable subject id ('sub') is linked
+    to the student record (oauth_google_sub) the first time this
+    succeeds, purely so a later profile-page email change doesn't
+    silently re-link a different student to the same Google account."""
+    if not oauth:
+        flash('Sign-in with Google is not configured for this deployment.', 'error')
+        return redirect(url_for('student_login'))
+    try:
+        token = oauth.google.authorize_access_token()
+        userinfo = token.get('userinfo') or oauth.google.userinfo()
+    except Exception as e:
+        logger.warning(f'Google OAuth callback failed: {e}')
+        flash('Google sign-in failed. Please try again or use your password.', 'error')
+        return redirect(url_for('student_login'))
+
+    google_sub = userinfo.get('sub')
+    google_email = (userinfo.get('email') or '').strip()
+    if not google_sub or not google_email:
+        flash('Google did not return the information needed to sign you in.', 'error')
+        return redirect(url_for('student_login'))
+
+    student = query_db('SELECT * FROM students WHERE oauth_google_sub=?', (google_sub,), one=True)
+    if not student:
+        student = query_db('SELECT * FROM students WHERE email=? COLLATE NOCASE', (google_email,), one=True)
+        if student:
+            execute_db('UPDATE students SET oauth_google_sub=? WHERE id=?', (google_sub, student['id']))
+
+    if not student:
+        log_audit('anonymous', google_email, 'student_oauth_login_unmatched')
+        flash(
+            f'No student account found for {google_email}. Please register first, or add this email to '
+            'your existing account from your profile page, then try Google sign-in again.',
+            'error'
+        )
+        return redirect(url_for('student_login'))
+
+    if _is_locked_out(student):
+        log_audit('student', student['roll_no'], 'student_login_blocked', details='account locked (oauth)')
+        flash('This account is temporarily locked due to repeated failed login attempts.', 'error')
+        return redirect(url_for('student_login'))
+
+    _establish_student_session(student, student['roll_no'], fingerprint_hash=None, login_event='student_oauth_login_success')
+    flash(f'Welcome, {student["name"]}!', 'success')
+    return redirect(url_for('student_login'))
 
 
 @app.route('/student/search')
@@ -3819,6 +4120,18 @@ def student_mark_attendance():
                 _record_attendance_mark_metric('late' if status == 'Late' else 'present')
                 # Return success with face match details
                 profile = query_db('SELECT name FROM students WHERE id=?', (student_id,), one=True)
+                # Opt-in email/SMS notification (see notifications.py) —
+                # best-effort, never allowed to affect the response below.
+                subject_row = query_db(
+                    'SELECT s.name AS subject_name FROM sessions se '
+                    'JOIN subjects s ON s.id = se.subject_id WHERE se.id=?',
+                    (session_id,), one=True
+                )
+                notifications.notify_attendance_marked(
+                    student_row, session_row, status,
+                    subject_name=subject_row['subject_name'] if subject_row else None
+                )
+                _maybe_notify_low_attendance(student_id)
                 score_out_of_100 = max(0, min(similarity, 1.0)) * 100
                 if status == 'Late':
                     match_msg = f'Face detected and matched to {profile["name"]} (match score: {score_out_of_100:.1f}/100) — marked Late.'
@@ -4222,7 +4535,40 @@ def student_profile():
         total_sessions=total,
         percentage=percentage,
         low_attendance_threshold=cfg.LOW_ATTENDANCE_THRESHOLD_PERCENT,
+        oauth_google_enabled=bool(oauth),
     )
+
+
+@app.route('/student/profile/update-contact', methods=['POST'])
+def student_update_contact():
+    """Self-service update of the email/phone/notification-preference
+    fields added for the notifications and password-reset features (see
+    README's "Notifications" section) — separate from
+    student_change_password() below so a contact-info typo fix doesn't
+    require re-entering the current password."""
+    student_id = session.get('student_id')
+    student = query_db('SELECT * FROM students WHERE id=?', (student_id,), one=True)
+    if not student:
+        flash('Student record not found', 'error')
+        return redirect(url_for('home'))
+
+    email, phone_number, contact_error = _normalize_contact_fields(
+        request.form.get('email'), request.form.get('phone_number')
+    )
+    if contact_error:
+        flash(contact_error, 'error')
+        return redirect(url_for('student_profile'))
+
+    notify_email = 1 if request.form.get('notify_email') else 0
+    notify_sms = 1 if request.form.get('notify_sms') else 0
+
+    execute_db(
+        'UPDATE students SET email=?, phone_number=?, notify_email=?, notify_sms=? WHERE id=?',
+        (email, phone_number, notify_email, notify_sms, student_id)
+    )
+    log_audit('student', student['roll_no'], 'student_updated_contact_info')
+    flash('Contact info updated.', 'success')
+    return redirect(url_for('student_profile'))
 
 
 @app.route('/student/profile/change-password', methods=['POST'])
