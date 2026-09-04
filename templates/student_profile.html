@@ -68,6 +68,31 @@
 </div>
 
 <div class="card wide-card">
+    <h2>Contact Info & Notifications</h2>
+    <p style="color: var(--muted); font-size: 0.9rem;">
+        Adding an email enables self-service password reset (if this
+        deployment supports it) and lets you receive attendance/low-
+        attendance notifications here, if enabled.
+    </p>
+    <form method="post" action="{{ url_for('student_update_contact') }}" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Email</label>
+        <input type="email" name="email" value="{{ student.email or '' }}" placeholder="you@example.edu">
+        <label>Phone Number</label>
+        <input type="tel" name="phone_number" value="{{ student.phone_number or '' }}" placeholder="+1 555 123 4567">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal;">
+            <input type="checkbox" name="notify_email" style="width: auto;" {% if student.notify_email %}checked{% endif %}>
+            Email me when my attendance is marked or runs low
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal;">
+            <input type="checkbox" name="notify_sms" style="width: auto;" {% if student.notify_sms %}checked{% endif %}>
+            Text me when my attendance is marked or runs low
+        </label>
+        <button type="submit" class="button">Save Contact Info</button>
+    </form>
+</div>
+
+<div class="card wide-card">
     <h2>Change My Password</h2>
     <form method="post" action="{{ url_for('student_change_password') }}" class="form-grid">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

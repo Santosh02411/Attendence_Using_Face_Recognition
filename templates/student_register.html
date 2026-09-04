@@ -14,6 +14,10 @@
             <input id="semester" type="text" placeholder="Semester" required>
             <label>Password</label>
             <input id="password" type="password" placeholder="Set your password" required>
+            <label>Email (optional)</label>
+            <input id="email" type="email" placeholder="For password reset & notifications">
+            <label>Phone Number (optional)</label>
+            <input id="phone_number" type="tel" placeholder="For SMS notifications">
             <label>Gender</label>
             <select id="gender">
                 <option value="male">Male</option>
@@ -125,6 +129,8 @@ function uploadImages() {
         branch: document.getElementById('branch').value,
         semester: document.getElementById('semester').value,
         password: document.getElementById('password').value,
+        email: document.getElementById('email').value,
+        phone_number: document.getElementById('phone_number').value,
         gender: document.getElementById('gender').value,
         images: capturedImages
     };
