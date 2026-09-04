@@ -5,7 +5,7 @@
 pytest>=8.0
 
 # Lint + type-check gate (see pyproject.toml for config, .github/workflows/ci.yml for the CI job)
-ruff>=0.6
+ruff>=0.16.5
 # Pinned below 2.0: mypy 2.x dropped support for `python_version = "3.9"`
 # (our pyproject.toml target, matching the README's stated minimum/the CI
 # test matrix's low end) — it now requires 3.10+ as the simulated target.
