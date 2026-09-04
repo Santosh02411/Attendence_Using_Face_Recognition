@@ -12,9 +12,11 @@ import sqlite3
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytest
+
 import config as cfg
 import notifications
-from tests.conftest import login_as_student
+from tests.conftest import login_as_admin, login_as_student
 
 
 def _register_student(client, roll_no='R100', email=None, phone_number=None, password='validPass123'):
@@ -46,7 +48,7 @@ def _register_student(client, roll_no='R100', email=None, phone_number=None, pas
 
     fake_box = np.array([[10, 10, 50, 50]])
     fake_embedding = np.zeros(128, dtype=np.float32)
-    fake_embedding[0] = 1.0
+    fake_embedding[abs(hash(roll_no)) % 128] = 1.0  # distinct per roll_no so duplicate-face checks don't collide across students in the same test
     with patch.object(cv2.CascadeClassifier, 'detectMultiScale', return_value=fake_box), \
          patch.object(app_module, 'compute_embedding', return_value=fake_embedding):
         resp = client.post('/student/register', json=payload)
@@ -270,3 +272,238 @@ class TestGoogleSSO:
         resp = client.get('/auth/google/callback', follow_redirects=True)
         assert resp.status_code == 200
         assert b'not configured' in resp.data
+
+
+class FakeGoogleClient:
+    """Stands in for Authlib's OAuth client during tests — never
+    contacts Google. authorize_redirect() returns an ordinary Flask
+    redirect so /auth/google/login and /auth/google/link can be
+    exercised without a real consent screen; authorize_access_token()/
+    userinfo() return the fixed profile the test configured."""
+
+    def __init__(self, userinfo):
+        self._userinfo = userinfo
+
+    def authorize_redirect(self, redirect_uri):
+        from flask import redirect
+        return redirect('https://accounts.google.com/fake-consent')
+
+    def authorize_access_token(self):
+        return {'userinfo': self._userinfo}
+
+    def userinfo(self):
+        return self._userinfo
+
+
+class FakeOAuth:
+    def __init__(self, userinfo):
+        self.google = FakeGoogleClient(userinfo)
+
+
+class TestGoogleOAuthLoginFlow:
+    """Exercises the LOGIN intent with a faked Google client (see
+    FakeOAuth above) — distinct from TestGoogleSSO's "not configured"
+    checks, which cover the off-by-default state."""
+
+    def test_login_matches_existing_student_by_email(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        _register_student(client, roll_no='R400', email='r400@example.edu')
+        monkeypatch.setattr(app_module, 'oauth', FakeOAuth({'sub': 'google-sub-1', 'email': 'r400@example.edu'}))
+
+        resp = client.get('/auth/google/callback', follow_redirects=True)
+        assert resp.status_code == 200
+        assert b'Welcome' in resp.data or b'Active Attendance Sessions' in resp.data
+
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        row = conn.execute("SELECT oauth_google_sub FROM students WHERE roll_no='R400'").fetchone()
+        conn.close()
+        assert row[0] == 'google-sub-1'
+
+    def test_login_with_no_matching_email_is_rejected(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'oauth', FakeOAuth({'sub': 'google-sub-2', 'email': 'nobody@example.edu'}))
+        resp = client.get('/auth/google/callback', follow_redirects=True)
+        assert b'No student account found' in resp.data
+
+
+class TestGoogleAccountLinking:
+    def test_link_requires_login_or_pending_registration(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'oauth', FakeOAuth({'sub': 'irrelevant', 'email': 'irrelevant@example.edu'}))
+        resp = client.get('/auth/google/link', follow_redirects=True)
+        assert b'Please log in' in resp.data
+
+    def test_registration_stashes_pending_link_target(self, client, isolated_paths):
+        student_id = _register_student(client, roll_no='R401')
+        with client.session_transaction() as sess:
+            assert sess['pending_oauth_link_student_id'] == student_id
+
+    def test_link_from_registration_logs_in_and_links(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        student_id = _register_student(client, roll_no='R402')
+        monkeypatch.setattr(app_module, 'oauth', FakeOAuth({'sub': 'google-sub-3', 'email': 'linked402@example.edu'}))
+
+        # google_oauth_link() reads session['pending_oauth_link_student_id']
+        # (set by registration above) and stores the target for the callback.
+        client.get('/auth/google/link')
+        resp = client.get('/auth/google/callback', follow_redirects=True)
+        assert b'connected' in resp.data.lower()
+
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        row = conn.execute('SELECT oauth_google_sub, email FROM students WHERE id=?', (student_id,)).fetchone()
+        conn.close()
+        assert row[0] == 'google-sub-3'
+        assert row[1] == 'linked402@example.edu'
+
+        with client.session_transaction() as sess:
+            assert sess.get('student_id') == student_id  # now fully logged in
+
+    def test_link_from_profile_keeps_existing_session(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        _register_student(client, roll_no='R403', password='validPass123', email='existing403@example.edu')
+        login_as_student(client, 'R403', 'validPass123')
+        monkeypatch.setattr(app_module, 'oauth', FakeOAuth({'sub': 'google-sub-4', 'email': 'existing403@example.edu'}))
+
+        client.get('/auth/google/link')
+        resp = client.get('/auth/google/callback', follow_redirects=True)
+        assert b'connected to your profile' in resp.data.lower() or b'connected' in resp.data.lower()
+
+    def test_link_rejects_google_account_already_linked_elsewhere(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        _register_student(client, roll_no='R404', email='r404@example.edu')
+        monkeypatch.setattr(app_module, 'oauth', FakeOAuth({'sub': 'shared-google-sub', 'email': 'r404@example.edu'}))
+        client.get('/auth/google/callback')  # links shared-google-sub to R404 via login-intent
+        client.get('/logout')  # otherwise R404's now-active session would win as the link target below
+
+        _register_student(client, roll_no='R405')  # stashes pending link target for R405
+        client.get('/auth/google/link')
+        resp = client.get('/auth/google/callback', follow_redirects=True)
+        assert b'already connected to a different student' in resp.data
+
+
+class TestAdminPasswordReset:
+    def test_disabled_by_default(self, client, isolated_paths):
+        resp = client.get('/admin/forgot-password')
+        assert b'not enabled' in resp.data
+
+    def test_login_page_hides_link_when_disabled(self, client, isolated_paths):
+        resp = client.get('/login')
+        assert b'Forgot password?' not in resp.data
+
+    def test_login_page_shows_link_when_enabled(self, client, isolated_paths, monkeypatch):
+        monkeypatch.setattr(cfg, 'ADMIN_PASSWORD_RESET_ENABLED', True)
+        resp = client.get('/login')
+        assert b'Forgot password?' in resp.data
+
+    def test_request_without_recovery_email_gives_generic_message_and_no_token(self, client, isolated_paths, monkeypatch):
+        monkeypatch.setattr(cfg, 'ADMIN_PASSWORD_RESET_ENABLED', True)
+        resp = client.post('/admin/forgot-password', data={'username': 'admin'}, follow_redirects=True)
+        assert b'password reset link has been sent' in resp.data
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        count = conn.execute('SELECT COUNT(*) FROM admin_password_reset_tokens').fetchone()[0]
+        conn.close()
+        assert count == 0  # admin has no recovery_email on file (can't be set via any route)
+
+    def test_request_with_recovery_email_issues_token(self, client, isolated_paths, monkeypatch):
+        monkeypatch.setattr(cfg, 'ADMIN_PASSWORD_RESET_ENABLED', True)
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        conn.execute("UPDATE admins SET recovery_email='admin-recovery@example.edu' WHERE username='admin'")
+        conn.commit()
+        conn.close()
+
+        resp = client.post('/admin/forgot-password', data={'username': 'admin'}, follow_redirects=True)
+        assert resp.status_code == 200
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        count = conn.execute('SELECT COUNT(*) FROM admin_password_reset_tokens').fetchone()[0]
+        conn.close()
+        assert count == 1
+
+    def test_reset_with_valid_token_changes_admin_password(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        monkeypatch.setattr(cfg, 'ADMIN_PASSWORD_RESET_ENABLED', True)
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        conn.execute("UPDATE admins SET recovery_email='admin-recovery2@example.edu' WHERE username='admin'")
+        conn.commit()
+        conn.close()
+
+        with patch.object(app_module.secrets, 'token_urlsafe', return_value='admin-fixed-token'):
+            client.post('/admin/forgot-password', data={'username': 'admin'})
+
+        resp = client.post('/admin/reset-password/admin-fixed-token', data={
+            'new_password': 'brandNewAdminPass1', 'confirm_password': 'brandNewAdminPass1',
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+
+        old_login = login_as_admin(client, password=cfg.DEFAULT_ADMIN_PASSWORD)
+        assert b'Invalid username or password' in old_login.data
+        new_login = login_as_admin(client, password='brandNewAdminPass1')
+        assert b'Invalid username or password' not in new_login.data
+
+    def test_reset_token_is_single_use(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        monkeypatch.setattr(cfg, 'ADMIN_PASSWORD_RESET_ENABLED', True)
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        conn.execute("UPDATE admins SET recovery_email='admin-recovery3@example.edu' WHERE username='admin'")
+        conn.commit()
+        conn.close()
+
+        with patch.object(app_module.secrets, 'token_urlsafe', return_value='admin-single-use-token'):
+            client.post('/admin/forgot-password', data={'username': 'admin'})
+
+        client.post('/admin/reset-password/admin-single-use-token', data={
+            'new_password': 'firstAdminPass1', 'confirm_password': 'firstAdminPass1',
+        })
+        second = client.get('/admin/reset-password/admin-single-use-token', follow_redirects=True)
+        assert b'invalid or has expired' in second.data
+
+    def test_reset_token_expired_is_rejected(self, client, isolated_paths, monkeypatch):
+        monkeypatch.setattr(cfg, 'ADMIN_PASSWORD_RESET_ENABLED', True)
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        conn.execute("UPDATE admins SET recovery_email='admin-recovery4@example.edu' WHERE username='admin'")
+        admin_id = conn.execute("SELECT id FROM admins WHERE username='admin'").fetchone()[0]
+        import hashlib
+        token_hash = hashlib.sha256(b'expired-admin-token').hexdigest()
+        conn.execute(
+            'INSERT INTO admin_password_reset_tokens(admin_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)',
+            (admin_id, token_hash, datetime.now().isoformat(), (datetime.now() - timedelta(minutes=1)).isoformat())
+        )
+        conn.commit()
+        conn.close()
+        resp = client.get('/admin/reset-password/expired-admin-token', follow_redirects=True)
+        assert b'invalid or has expired' in resp.data
+
+
+class TestSetAdminRecoveryEmailScript:
+    """set_admin_recovery_email.py is the ONLY way to set an admin's
+    recovery email — there is deliberately no HTTP route for it (see
+    the script's own docstring and config.py's ADMIN_PASSWORD_RESET_ENABLED
+    comment)."""
+
+    def test_sets_and_clears_recovery_email(self, isolated_paths, monkeypatch):
+        import app as app_module
+        app_module.init_databases()
+        import set_admin_recovery_email as script
+
+        monkeypatch.setattr(script.sys, 'argv', ['set_admin_recovery_email.py', 'admin', 'ops@example.edu'])
+        script.main()
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        value = conn.execute("SELECT recovery_email FROM admins WHERE username='admin'").fetchone()[0]
+        conn.close()
+        assert value == 'ops@example.edu'
+
+        monkeypatch.setattr(script.sys, 'argv', ['set_admin_recovery_email.py', 'admin', '--clear'])
+        script.main()
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        value = conn.execute("SELECT recovery_email FROM admins WHERE username='admin'").fetchone()[0]
+        conn.close()
+        assert value is None
+
+    def test_rejects_invalid_email(self, isolated_paths, monkeypatch, capsys):
+        import app as app_module
+        app_module.init_databases()
+        import set_admin_recovery_email as script
+
+        monkeypatch.setattr(script.sys, 'argv', ['set_admin_recovery_email.py', 'admin', 'not-an-email'])
+        with pytest.raises(SystemExit):
+            script.main()
+        assert 'does not look like a valid email' in capsys.readouterr().out
