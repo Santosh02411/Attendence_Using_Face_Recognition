@@ -799,3 +799,34 @@ OAUTH_GOOGLE_CLIENT_SECRET = os.environ.get('OAUTH_GOOGLE_CLIENT_SECRET', '')  #
 OAUTH_GOOGLE_DISCOVERY_URL = os.environ.get(
     'OAUTH_GOOGLE_DISCOVERY_URL', 'https://accounts.google.com/.well-known/openid-configuration'
 )
+
+# --- SSO account linking (registration + profile) ---------------------------
+# See README's "SSO / Institutional Login" section, "Linking Google to an
+# Account" subsection. No separate enable flag — governed by
+# OAUTH_GOOGLE_ENABLED above; these routes simply don't do anything
+# useful if that's off (same as /auth/google/login itself).
+
+# --- Admin self-service password reset (email) -------------------------------
+# Deliberately more conservative than the student version above in
+# several ways — see the README's "Self-Service Password Reset" ->
+# "Admin Accounts" subsection for the full reasoning:
+#   1. Off by default (PASSWORD_RESET_ENABLED for students defaults on;
+#      this defaults off) — an operator has to consciously accept the
+#      added attack surface on the single admin account.
+#   2. An admin's recovery_email can ONLY be set via the
+#      set_admin_recovery_email.py CLI script — there is no HTTP route
+#      to set or change it, so a web-app-level compromise (a stolen
+#      admin session, a CSRF gap, etc.) can never redirect where the
+#      reset link goes.
+#   3. Shorter token lifetime and a stricter rate limit than the student
+#      flow.
+#   4. Every request/completion additionally raises a Sentry
+#      capture_message() (if configured — see error_reporting.py) since
+#      an admin-account reset attempt is a higher-value security signal
+#      than a student one.
+# ENV_VAR: ADMIN_PASSWORD_RESET_ENABLED
+ADMIN_PASSWORD_RESET_ENABLED = os.environ.get('ADMIN_PASSWORD_RESET_ENABLED', '0') == '1'
+# ENV_VAR: ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES
+ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES = _env_int('ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES', 15)
+# ENV_VAR: RATE_LIMIT_ADMIN_PASSWORD_RESET
+RATE_LIMIT_ADMIN_PASSWORD_RESET = os.environ.get('RATE_LIMIT_ADMIN_PASSWORD_RESET', '3 per hour')

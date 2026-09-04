@@ -1,11 +1,13 @@
 """
 Admin account recovery.
 
-There's no email/SMTP infrastructure in this project (see README), so a
-self-service "forgot password" flow isn't available for admin accounts.
-This script is the practical alternative: whoever has direct access to
-the server/database (e.g. via SSH) can reset an admin's password, or
-create a fresh one if every admin account is somehow locked out.
+This script resets an admin's password (or creates a fresh one) directly
+via server/database access — the unconditional fallback regardless of
+whether email/SMTP is configured. A more restricted self-service
+"forgot password" flow does exist for admin accounts (see
+ADMIN_PASSWORD_RESET_ENABLED in config.py and set_admin_recovery_email.py),
+but it's opt-in and depends on an admin having a recovery email on file;
+this script always works.
 
 Usage:
     python reset_admin_password.py <username> [--create]

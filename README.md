@@ -149,6 +149,7 @@ Attendance_Using_Face_Recognition/
 ├── healthcheck.py                  # Standalone HTTP healthcheck probe, used by Docker HEALTHCHECK
 ├── migrate_embeddings.py           # One-time backfill for pre-embedding registrations
 ├── reset_admin_password.py         # CLI recovery tool if the admin account gets locked out
+├── set_admin_recovery_email.py     # CLI-only way to set an admin's password-reset recovery email
 ├── requirements.txt                # Python dependencies
 ├── requirements-dev.txt            # + pytest, ruff, mypy, pip-audit — for tests/lint/type-check/security scan
 ├── requirements-prod.txt           # + gunicorn, sentry-sdk, for running in production (Linux/macOS/Docker)
@@ -170,7 +171,9 @@ Attendance_Using_Face_Recognition/
 │   ├── base.html                 # Base template (nav, theme toggle, flash messages)
 │   ├── _pagination.html          # Shared pagination-controls macro
 │   ├── index.html                # Landing page
-│   ├── login.html                # Admin login page (+ CAPTCHA)
+│   ├── login.html                # Admin login page (+ CAPTCHA, forgot-password link when enabled)
+│   ├── admin_forgot_password.html # Admin: request a password-reset email
+│   ├── admin_reset_password.html  # Admin: set a new password from an emailed link
 │   ├── admin_dashboard.html      # Admin dashboard
 │   ├── admin_sessions.html       # Session management (+ overlap detection)
 │   ├── admin_students.html       # Student management (search, pagination, reset, delete)
@@ -188,7 +191,7 @@ Attendance_Using_Face_Recognition/
 │   ├── student_attend.html       # Student self-service attendance marking
 │   └── student_history.html      # Attendance history
 ├── static/                        # CSS and shared JS (styles.css, app.js)
-├── tests/                          # pytest test suite (447 tests) — see "Running Tests"
+├── tests/                          # pytest test suite (464 tests) — see "Running Tests"
 └── archive/                       # Superseded standalone CLI scripts, kept
     └── legacy_scripts/            # for reference only — not used by app.py
 ```
@@ -666,20 +669,46 @@ above) can reset their own forgotten password without an admin, from
    policy as registration. The token is marked used immediately —
    reusing the link afterward is rejected the same way an expired one is.
 
-This is **student-only**. The admin account still has no self-service
-"forgot password" (see "Account Recovery" below) — `python
-reset_admin_password.py <username>` from the server remains the only
-recovery path for a locked-out admin, since granting the same emailed-
-link mechanism to the single admin account would be a much higher-value
-target for the same SMTP credentials.
+This student flow is enabled by default (`PASSWORD_RESET_ENABLED`);
+rate-limited per IP via `RATE_LIMIT_PASSWORD_RESET` (default
+5/minute) the same way login is. If `EMAIL_NOTIFICATIONS_ENABLED`/SMTP
+aren't configured, the request endpoint still "succeeds" with the same
+generic message (nothing here should reveal whether email is even set
+up), but no email actually goes out — a token is issued but the
+student never receives its link, so in practice this feature needs
+email configured to be useful end-to-end.
 
-Toggle with `PASSWORD_RESET_ENABLED` (default on); rate-limited per IP
-via `RATE_LIMIT_PASSWORD_RESET` (default 5/minute) the same way login is.
-If `EMAIL_NOTIFICATIONS_ENABLED`/SMTP aren't configured, the request
-endpoint still "succeeds" with the same generic message (nothing here
-should reveal whether email is even set up), but no email actually goes
-out — a token is issued but the student never receives its link, so in
-practice this feature needs email configured to be useful end-to-end.
+### Admin Accounts
+
+Admin accounts now have a self-service reset too (`/admin/forgot-password`
+/ `/admin/reset-password/<token>`), but it's deliberately more locked
+down than the student version, since the admin account is a much
+higher-value target:
+
+1. **Off by default** — `ADMIN_PASSWORD_RESET_ENABLED` defaults to `0`,
+   unlike the student flow's default-on `PASSWORD_RESET_ENABLED`. An
+   operator has to consciously accept the added attack surface.
+2. **The recovery email can't be set from the web app at all.** There is
+   no HTTP route to set or change `admins.recovery_email` — the only
+   way is `python set_admin_recovery_email.py <username> <email>` from
+   the server, mirroring `reset_admin_password.py`'s own reasoning: if
+   a web route could change that address, a stolen admin session, a
+   CSRF gap, or an XSS bug could quietly redirect future reset links to
+   an attacker, defeating the point of a recovery mechanism.
+3. **Shorter token lifetime and a stricter rate limit** —
+   `ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES` (default 15, vs. the
+   student flow's 30) and `RATE_LIMIT_ADMIN_PASSWORD_RESET` (default
+   3/hour, vs. 5/minute).
+4. **Extra security signal** — every request and completion also calls
+   `error_reporting.capture_message()` (routed to Sentry if
+   `SENTRY_DSN` is configured), in addition to the audit log, since an
+   admin-account reset attempt is a higher-value signal worth surfacing
+   through the same channel as other alerting.
+
+`python reset_admin_password.py <username>` from the server remains
+available as always and doesn't require any of the above to be
+configured — it's the fallback if email/SMTP isn't set up at all, or if
+an admin's recovery email was never set.
 
 ## 🔐 SSO / Institutional Login
 
@@ -720,6 +749,30 @@ Configure via `OAUTH_GOOGLE_ENABLED=1`, `OAUTH_GOOGLE_CLIENT_ID`, and
 Google is `<your-deployment-url>/auth/google/callback`. Only Google is
 implemented; a SAML/generic-OIDC/institutional-LDAP path is not (see
 "Future Enhancements" below).
+
+### Linking Google to an Account
+
+A student can connect a Google account to their existing record two ways:
+
+- **From `/student/profile`** — a "Connect Google Account" button (shown
+  whenever `OAUTH_GOOGLE_ENABLED` and no `oauth_google_sub` is set yet)
+  starts the same OAuth flow via `/auth/google/link`, but with `intent`
+  set to `link` rather than `login` in the session — the callback links
+  the Google account to *this already-logged-in* student directly,
+  without needing an email match.
+- **Right after registering** — since registration itself doesn't log
+  the student in, `student_register()` stashes the new student's id in
+  `session['pending_oauth_link_student_id']`; the success screen on
+  `/student/register` offers a "Connect Google Account (optional)"
+  button that uses that stashed id the same way, then logs the student
+  straight in on success (skipping the "type your new password again"
+  step).
+
+Either path rejects the attempt if that Google account is already
+linked to a *different* student (`students.oauth_google_sub` is
+effectively unique in practice, even though the DB index itself allows
+duplicate `NULL`s — see the index comment in
+`0009_add_notifications_and_sso.py`).
 
 ## 🔧 Configuration
 
@@ -846,12 +899,19 @@ Also in `config.py` / `.env.example` — see "Notifications",
 - **Google SSO**: `OAUTH_GOOGLE_ENABLED` (default off),
   `OAUTH_GOOGLE_CLIENT_ID`, `OAUTH_GOOGLE_CLIENT_SECRET`,
   `OAUTH_GOOGLE_DISCOVERY_URL`
+- **Admin password reset**: `ADMIN_PASSWORD_RESET_ENABLED` (default
+  off), `ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES` (15),
+  `RATE_LIMIT_ADMIN_PASSWORD_RESET` (`3 per hour`) — the admin's
+  recovery email itself is set only via `set_admin_recovery_email.py`,
+  never through config/env
 
 ## 📊 Database Schema
 
 ### Main Tables
 - **admins**: Administrator credentials, plus lockout tracking
-  (`failed_attempts`, `locked_until`)
+  (`failed_attempts`, `locked_until`) and an optional `recovery_email`
+  (settable only via `set_admin_recovery_email.py` — see "Self-Service
+  Password Reset" -> "Admin Accounts")
 - **students**: Student information and credentials, plus login lockout
   tracking (`failed_attempts`, `locked_until`), attendance-marking
   abuse lockout tracking (`attendance_security_failures`,
@@ -893,6 +953,10 @@ Also in `config.py` / `.env.example` — see "Notifications",
   password-reset link — a SHA-256 hash of the token (never the raw
   token), an expiry, and a used-once marker — see "Self-Service
   Password Reset"
+- **admin_password_reset_tokens**: The admin-account equivalent of
+  `password_reset_tokens`, kept as a separate table since the two
+  flows' trust models differ (see "Self-Service Password Reset" ->
+  "Admin Accounts")
 
 ### Face Recognition Tables
 - **people**: Face profile information linked to student IDs
@@ -1009,14 +1073,15 @@ Also in `config.py` / `.env.example` — see "Notifications",
   admin-dashboard **Security Alerts** widget that groups spoof/liveness
   events per student, and a fuller **Security Dashboard**
   (`/admin/security-dashboard`) with trends and risk scores
-- **Account recovery** — if a student forgets their password, an admin
-  can reset it from `/admin/students` (generates a one-time temporary
-  password to share with the student out-of-band), after which the
-  student can set their own password from `/student/profile`; for the
-  admin account itself, use `python reset_admin_password.py <username>`
-  from the server if locked out (there's no email/SMTP infrastructure in
-  this project to build a self-service "forgot password" flow on top of
-  — see the script's docstring)
+- **Account recovery** — a student can reset their own forgotten
+  password via an emailed link if they've added an email to their
+  account (see "Self-Service Password Reset"), or an admin can reset it
+  from `/admin/students` (a one-time temporary password to share
+  out-of-band) either way; for the admin account itself,
+  `python reset_admin_password.py <username>` from the server always
+  works, and a more restricted self-service option also exists if
+  explicitly enabled (see "Self-Service Password Reset" -> "Admin
+  Accounts")
 - **Request size limits** — a global body-size cap
   (`MAX_CONTENT_LENGTH_MB`) plus tighter, more specific caps on
   registration image count/size and attendance-marking frame size
@@ -1040,15 +1105,21 @@ it for anything beyond a class project or internal tool):
   originate from an allowed network
 - No HTTPS/TLS is configured here — that's the deploying environment's
   responsibility (e.g. a reverse proxy)
-- No self-service "forgot password" for the **admin** account — that
-  still requires `python reset_admin_password.py` from the server (see
-  "Account Recovery" above). Students do have self-service reset now
-  (see "Self-Service Password Reset"), but only if they've added an
-  email to their account first.
-- SSO covers Google only, and only as a login method for an **already-
-  registered** student account matched by email — there's no SAML/
-  generic-OIDC support, and it can't substitute for registration's
-  face-enrollment step (see "SSO / Institutional Login")
+- Admin self-service password reset is **off by default**
+  (`ADMIN_PASSWORD_RESET_ENABLED`) and, even when enabled, only works
+  for an admin whose recovery email was set via
+  `set_admin_recovery_email.py` on the server — there is no web route
+  to set it (see "Self-Service Password Reset" -> "Admin Accounts").
+  `python reset_admin_password.py` remains the unconditional fallback.
+  Students have self-service reset on by default, but only once
+  they've added an email to their account.
+- SSO covers Google only, and a login-intent match is only ever to an
+  **already-registered** student account matched by email — there's no
+  SAML/generic-OIDC support, and it can't substitute for registration's
+  face-enrollment step. Linking a Google account to an account directly
+  (from `/student/profile` or right after registering) doesn't need
+  that email match, but still can't create a new account by itself
+  (see "SSO / Institutional Login").
 
 ## 🚨 Troubleshooting
 
@@ -1105,7 +1176,7 @@ The application includes debug features:
 
 ## ✅ Running Tests
 
-The test suite (447 tests) covers authentication (password hashing, login
+The test suite (464 tests) covers authentication (password hashing, login
 flows, account lockout), CSRF protection, rate limiting, CAPTCHA,
 password strength policy, self-service and admin-assisted password
 changes, SQL-injection resistance, the embedding-based face recognition
@@ -1117,8 +1188,10 @@ overlap detection, pagination, reverse-proxy IP handling, the
 attendance-marking security properties (session-derived identity, 1:1
 verification, no cross-identity leakage), and the notifications/
 password-reset/SSO additions (safe-no-op behavior when unconfigured,
-token issuance/expiry/single-use, and the email-matching/no-auto-create
-rule for Google sign-in — see `tests/test_notifications_and_sso.py`).
+token issuance/expiry/single-use for both the student and admin reset
+flows, the email-matching/no-auto-create rule for Google login, and the
+account-linking flows from registration and from the profile page —
+see `tests/test_notifications_and_sso.py`).
 
 Every test runs against a temporary, isolated database and Datasets
 folder — the suite never touches your real `database/` or `Datasets/`.

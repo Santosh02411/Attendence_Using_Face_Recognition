@@ -1974,7 +1974,16 @@ def home():
 
 @app.before_request
 def restrict_access():
-    allowed_routes = ['home', 'login', 'student_login', 'student_register', 'static', 'test_image', 'get_active_sessions']
+    allowed_routes = [
+        'home', 'login', 'student_login', 'student_register', 'static', 'test_image', 'get_active_sessions',
+        # Password-reset/SSO routes must be reachable while logged out —
+        # see "Self-Service Password Reset" and "SSO / Institutional
+        # Login" in the README. Admin ones in particular would otherwise
+        # be caught by the blanket '/admin/' check below.
+        'student_forgot_password', 'student_reset_password',
+        'admin_forgot_password', 'admin_reset_password',
+        'google_oauth_login', 'google_oauth_link', 'google_oauth_callback',
+    ]
     if request.endpoint in allowed_routes or not request.endpoint:
         return
 
@@ -2023,14 +2032,14 @@ def login():
         if not _check_captcha(captcha_response):
             flash('Incorrect CAPTCHA. Please try again.', 'error')
             log_audit('anonymous', username, 'admin_login_failed', details='captcha failed')
-            return render_template('login.html')
+            return render_template('login.html', admin_password_reset_enabled=cfg.ADMIN_PASSWORD_RESET_ENABLED)
 
         admin = query_db('SELECT * FROM admins WHERE username=?', (username,), one=True)
 
         if admin and _is_locked_out(admin):
             flash('This account is temporarily locked due to repeated failed login attempts. Please try again later.', 'error')
             log_audit('anonymous', username, 'admin_login_blocked', details='account locked')
-            return render_template('login.html')
+            return render_template('login.html', admin_password_reset_enabled=cfg.ADMIN_PASSWORD_RESET_ENABLED)
 
         if admin and check_password_hash(admin['password'], password):
             _clear_failed_logins('admins', admin['id'])
@@ -2050,7 +2059,115 @@ def login():
         else:
             flash('Invalid username or password', 'error')
         log_audit('anonymous', username, 'admin_login_failed')
-    return render_template('login.html')
+    return render_template('login.html', admin_password_reset_enabled=cfg.ADMIN_PASSWORD_RESET_ENABLED)
+
+
+@app.route('/admin/forgot-password', methods=['GET', 'POST'])
+@limiter.limit(lambda: cfg.RATE_LIMIT_ADMIN_PASSWORD_RESET, methods=['POST'])
+def admin_forgot_password():
+    """Self-service password-reset request for an admin account — see
+    README's "Self-Service Password Reset" -> "Admin Accounts" for the
+    extra safeguards versus the student version of this flow. Off by
+    default (ADMIN_PASSWORD_RESET_ENABLED), and even when on, only ever
+    does anything for an admin whose recovery_email was already set via
+    set_admin_recovery_email.py — there is no way to set it from here.
+    """
+    if not cfg.ADMIN_PASSWORD_RESET_ENABLED:
+        flash('Self-service password reset is not enabled for admin accounts on this deployment. '
+              'Please use reset_admin_password.py from the server instead.', 'error')
+        return render_template('admin_forgot_password.html')
+
+    if request.method == 'POST':
+        username = (request.form.get('username') or '').strip()
+        generic_message = (
+            'If that account exists and has a recovery email on file, a password reset link has been sent to it.'
+        )
+
+        admin = query_db('SELECT * FROM admins WHERE username=?', (username,), one=True)
+        if admin and admin['recovery_email']:
+            raw_token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+            expires_at = datetime.now() + timedelta(minutes=cfg.ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES)
+            execute_db(
+                'INSERT INTO admin_password_reset_tokens(admin_id, token_hash, created_at, expires_at, requested_ip) '
+                'VALUES(?, ?, ?, ?, ?)',
+                (admin['id'], token_hash, datetime.now().isoformat(), expires_at.isoformat(), request.remote_addr)
+            )
+            reset_url = url_for('admin_reset_password', token=raw_token, _external=True)
+            notifications.send_email(
+                admin['recovery_email'], 'Admin password reset requested',
+                f"A password reset was requested for the admin account \"{username}\".\n\n"
+                f"Reset it here (expires in {cfg.ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES} minutes, "
+                f"single use):\n\n{reset_url}\n\n"
+                f"If you didn't request this, your password will NOT change unless someone completes "
+                f"this link — but you should investigate immediately, since it means someone has this "
+                f"admin's username and is attempting account recovery.\n\n— {cfg.SMTP_FROM_NAME}"
+            )
+            log_audit('admin', username, 'admin_password_reset_requested')
+            # An admin-account reset attempt is a higher-value security
+            # signal than a student one — surface it to Sentry (if
+            # configured) in addition to the audit log.
+            error_reporting.capture_message(f'Admin password reset requested for account "{username}"', level='warning')
+        else:
+            log_audit('anonymous', username or '(blank)', 'admin_password_reset_requested_unmatched')
+
+        flash(generic_message, 'success')
+        return redirect(url_for('admin_forgot_password'))
+
+    return render_template('admin_forgot_password.html')
+
+
+@app.route('/admin/reset-password/<token>', methods=['GET', 'POST'])
+@limiter.limit(lambda: cfg.RATE_LIMIT_ADMIN_PASSWORD_RESET, methods=['POST'])
+def admin_reset_password(token):
+    """Completes an admin password reset from the emailed link — same
+    single-use, hashed-token mechanics as student_reset_password()."""
+    if not cfg.ADMIN_PASSWORD_RESET_ENABLED:
+        flash('Self-service password reset is not enabled for admin accounts on this deployment.', 'error')
+        return redirect(url_for('login'))
+
+    token_hash = hashlib.sha256((token or '').encode('utf-8')).hexdigest()
+    token_row = query_db('SELECT * FROM admin_password_reset_tokens WHERE token_hash=?', (token_hash,), one=True)
+
+    def _token_invalid():
+        return (
+            not token_row
+            or token_row['used_at']
+            or datetime.fromisoformat(token_row['expires_at']) < datetime.now()
+        )
+
+    if _token_invalid():
+        flash('This password reset link is invalid or has expired. Please request a new one.', 'error')
+        return redirect(url_for('admin_forgot_password'))
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if new_password != confirm_password:
+            flash('New password and confirmation do not match.', 'error')
+            return render_template('admin_reset_password.html', token=token)
+
+        password_error = validate_password_strength(new_password)
+        if password_error:
+            flash(password_error, 'error')
+            return render_template('admin_reset_password.html', token=token)
+
+        admin = query_db('SELECT * FROM admins WHERE id=?', (token_row['admin_id'],), one=True)
+        if not admin:
+            flash('Admin record not found.', 'error')
+            return redirect(url_for('admin_forgot_password'))
+
+        execute_db('UPDATE admins SET password=?, failed_attempts=0, locked_until=NULL WHERE id=?',
+                   (generate_password_hash(new_password), admin['id']))
+        execute_db('UPDATE admin_password_reset_tokens SET used_at=? WHERE id=?',
+                   (datetime.now().isoformat(), token_row['id']))
+        log_audit('admin', admin['username'], 'admin_password_reset_completed')
+        error_reporting.capture_message(f'Admin password reset completed for account "{admin["username"]}"', level='warning')
+        flash('Your password has been reset. You can now log in.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('admin_reset_password.html', token=token)
 
 
 @app.route('/logout')
@@ -3415,11 +3532,17 @@ def student_register():
             return jsonify({'error': f'None of the photos could be used ({reason_summary}). Please retake in good, even lighting with only your face in frame.'}), 400
         execute_db('UPDATE students SET photo_count=? WHERE id=?', (saved, student_id))
         log_audit('student', roll_no, 'student_registered', details=f'{saved} face photo(s) enrolled')
+        # Lets the student connect a Google account immediately after
+        # registering, before their first real login — see
+        # google_oauth_link()'s docstring. Session values are signed by
+        # Flask, so this can't be forged into linking a different
+        # student's account.
+        session['pending_oauth_link_student_id'] = student_id
         response = {'status': 'ok', 'student_id': student_id}
         if skip_reasons:
             response['warning'] = f'{len(skip_reasons)} of {len(images)} photos were skipped ({", ".join(sorted(set(skip_reasons)))}); {saved} were used.'
         return jsonify(response)
-    return render_template('student_register.html')
+    return render_template('student_register.html', oauth_google_enabled=bool(oauth))
 
 
 @app.route('/student/login', methods=['GET', 'POST'])
@@ -3602,19 +3725,65 @@ def google_oauth_login():
     if not oauth:
         flash('Sign-in with Google is not configured for this deployment.', 'error')
         return redirect(url_for('student_login'))
+    session['oauth_intent'] = 'login'
+    redirect_uri = url_for('google_oauth_callback', _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
+
+
+@app.route('/auth/google/link')
+def google_oauth_link():
+    """Starts the same Google OAuth flow, but to LINK a Google account to
+    a student record rather than to log in with an existing link — see
+    README's "SSO / Institutional Login" -> "Linking Google to an
+    Account". Reachable two ways:
+    - From /student/profile, while already logged in (session['student_id']).
+    - Right after registration, before the student has logged in for the
+      first time — student_register() stashes the newly created
+      student's id in session['pending_oauth_link_student_id'] for
+      exactly this case, since registration itself doesn't establish a
+      full login session.
+    Either way, the target student id is captured into
+    session['oauth_link_target_id'] here so google_oauth_callback() knows
+    which account to link once Google redirects back — it never trusts
+    a student id passed directly in the URL for this.
+    """
+    if not oauth:
+        flash('Sign-in with Google is not configured for this deployment.', 'error')
+        return redirect(url_for('student_login'))
+
+    target_id = session.get('student_id') or session.get('pending_oauth_link_student_id')
+    if not target_id:
+        flash('Please log in (or just finish registering) before connecting a Google account.', 'error')
+        return redirect(url_for('student_login'))
+
+    session['oauth_intent'] = 'link'
+    session['oauth_link_target_id'] = target_id
     redirect_uri = url_for('google_oauth_callback', _external=True)
     return oauth.google.authorize_redirect(redirect_uri)
 
 
 @app.route('/auth/google/callback')
 def google_oauth_callback():
-    """Handles the redirect back from Google. Only ever logs in an
-    EXISTING student account, matched by email — see OAUTH_GOOGLE_ENABLED's
-    comment in config.py for why this deliberately doesn't auto-create
-    accounts. The Google account's stable subject id ('sub') is linked
-    to the student record (oauth_google_sub) the first time this
-    succeeds, purely so a later profile-page email change doesn't
-    silently re-link a different student to the same Google account."""
+    """Handles the redirect back from Google for both intents started
+    above (session['oauth_intent'], set by whichever of the two routes
+    initiated the flow — never trusted from the request itself, since
+    Google's redirect doesn't carry it back).
+
+    LOGIN intent: only ever logs in an EXISTING student account, matched
+    by email — see OAUTH_GOOGLE_ENABLED's comment in config.py for why
+    this deliberately doesn't auto-create accounts. The Google account's
+    stable subject id ('sub') is linked to the student record
+    (oauth_google_sub) the first time this succeeds, purely so a later
+    profile-page email change doesn't silently re-link a different
+    student to the same Google account.
+
+    LINK intent: links the Google account to session['oauth_link_target_id']
+    specifically (set by google_oauth_link() above) rather than doing an
+    email-based lookup — the student has already proven who they are
+    (either by being logged in, or by just having registered), so this
+    doesn't need a second identity check, only a check that this Google
+    account isn't already linked to a *different* student.
+    """
     if not oauth:
         flash('Sign-in with Google is not configured for this deployment.', 'error')
         return redirect(url_for('student_login'))
@@ -3632,6 +3801,46 @@ def google_oauth_callback():
         flash('Google did not return the information needed to sign you in.', 'error')
         return redirect(url_for('student_login'))
 
+    intent = session.pop('oauth_intent', 'login')
+
+    if intent == 'link':
+        target_id = session.pop('oauth_link_target_id', None)
+        session.pop('pending_oauth_link_student_id', None)
+        if not target_id:
+            flash('Your registration/profile session expired before Google sign-in finished. '
+                  'Please log in and connect Google from your profile page instead.', 'error')
+            return redirect(url_for('student_login'))
+
+        already_linked_elsewhere = query_db(
+            'SELECT id FROM students WHERE oauth_google_sub=? AND id != ?', (google_sub, target_id), one=True
+        )
+        if already_linked_elsewhere:
+            flash('This Google account is already connected to a different student account.', 'error')
+            return redirect(url_for('student_login'))
+
+        target_student = query_db('SELECT * FROM students WHERE id=?', (target_id,), one=True)
+        if not target_student:
+            flash('Student record not found.', 'error')
+            return redirect(url_for('student_login'))
+
+        new_email = target_student['email'] or google_email
+        execute_db('UPDATE students SET oauth_google_sub=?, email=? WHERE id=?',
+                   (google_sub, new_email, target_id))
+        log_audit('student', target_student['roll_no'], 'student_oauth_linked')
+
+        if session.get('student_id') == target_id:
+            # Already fully logged in (came from /student/profile) — just confirm.
+            flash('Google account connected to your profile.', 'success')
+        else:
+            # Came straight from registration — log them in now rather
+            # than sending them back to type the password they just set.
+            refreshed = query_db('SELECT * FROM students WHERE id=?', (target_id,), one=True)
+            _establish_student_session(refreshed, refreshed['roll_no'], fingerprint_hash=None,
+                                        login_event='student_oauth_login_success')
+            flash('Google account connected! You are now logged in.', 'success')
+        return redirect(url_for('student_login'))
+
+    # LOGIN intent (default)
     student = query_db('SELECT * FROM students WHERE oauth_google_sub=?', (google_sub,), one=True)
     if not student:
         student = query_db('SELECT * FROM students WHERE email=? COLLATE NOCASE', (google_email,), one=True)
