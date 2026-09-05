@@ -54,7 +54,7 @@ document.getElementById('studentLoginForm').onsubmit = function(e) {
     const password = document.getElementById('password').value;
     const captchaEl = document.getElementById('captcha');
     const captcha = captchaEl ? captchaEl.value : undefined;
-    document.getElementById('resultBox').textContent = 'Authenticating...';
+    setStatusMessage('resultBox', 'Authenticating...');
     
     fetch('/student/login', {
         method: 'POST',
@@ -64,7 +64,7 @@ document.getElementById('studentLoginForm').onsubmit = function(e) {
     .then(r => r.json())
     .then(d => {
         if (d.status === 'ok') {
-            document.getElementById('resultBox').textContent = 'Welcome, ' + d.student.name;
+            setStatusMessage('resultBox', 'Welcome, ' + d.student.name, 'success');
             document.getElementById('welcomeMsg').textContent = 'Welcome, ' + d.student.name + '!';
             document.getElementById('loginFormCard').style.display = 'none';
             document.getElementById('sessionsContainer').style.display = 'block';
@@ -72,7 +72,7 @@ document.getElementById('studentLoginForm').onsubmit = function(e) {
             // Refresh to update navbar
             setTimeout(() => window.location.reload(), 1000);
         } else {
-            document.getElementById('resultBox').textContent = d.message || 'Login failed. Please check your credentials.';
+            setStatusMessage('resultBox', d.message || 'Login failed. Please check your credentials.', 'error');
             document.getElementById('sessionsContainer').style.display = 'none';
             if (captchaEl) {
                 document.getElementById('captchaImg').src = '{{ url_for("captcha_image") }}?t=' + Date.now();
@@ -81,7 +81,7 @@ document.getElementById('studentLoginForm').onsubmit = function(e) {
         }
     })
     .catch(e => {
-        document.getElementById('resultBox').textContent = 'Error: ' + e.message;
+        setStatusMessage('resultBox', 'Error: ' + e.message, 'error');
     });
 };
 
@@ -103,14 +103,20 @@ function loadActiveSessions(studentId) {
                     `;
                 });
                 document.getElementById('sessionsList').innerHTML = html;
-                document.getElementById('sessionsContainer').style.display = 'block';
             } else {
-                document.getElementById('resultBox').textContent = 'No active sessions available.';
-                document.getElementById('sessionsContainer').style.display = 'none';
+                // No CURRENTLY active session is the common case, not an
+                // error — the "Active Attendance Sessions" card (and its
+                // welcome message) must stay visible either way. This
+                // used to also hide #sessionsContainer here, which left
+                // a fully blank page after every login/reload with
+                // nothing active to show.
+                document.getElementById('sessionsList').innerHTML =
+                    '<p style="color: var(--muted);">No active sessions right now. Check back when your class starts.</p>';
             }
         })
         .catch(e => {
-            document.getElementById('resultBox').textContent = 'Error loading sessions: ' + e.message;
+            document.getElementById('sessionsList').innerHTML =
+                '<p class="result-box error">Error loading sessions: ' + e.message + '</p>';
         });
 }
 

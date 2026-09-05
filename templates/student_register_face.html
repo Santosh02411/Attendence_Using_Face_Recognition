@@ -10,7 +10,16 @@
         needed before you can mark attendance using face recognition.
     </p>
     <div class="form-panel video-panel">
-        <video id="video" autoplay muted playsinline webkit-playsinline style="width: 100%; max-width: 480px; object-fit: cover; background: black;"></video>
+        <div class="camera-frame" style="max-width: 480px;">
+            <video id="video" autoplay muted playsinline webkit-playsinline></video>
+            <div class="camera-placeholder" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                    <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+                <span>Click "Start Camera" to begin</span>
+            </div>
+        </div>
         <canvas id="captureCanvas" style="display:none"></canvas>
         <div class="capture-controls">
             <div class="capture-count">Captured <span id="capturedCount">0</span>/5</div>
@@ -27,11 +36,12 @@ let capturedImages = [];
 document.getElementById('startButton').onclick = function() {
     capturedImages = [];
     document.getElementById('capturedCount').textContent = '0';
+    document.getElementById('captureButton').textContent = 'Capture Frame';
     startCamera();
 };
 
 function startCamera() {
-    document.getElementById('resultBox').textContent = 'Requesting camera... Make sure to click ALLOW when browser asks!';
+    setStatusMessage('resultBox', 'Requesting camera... Make sure to click ALLOW when browser asks!');
     document.getElementById('captureButton').disabled = true;
 
     navigator.mediaDevices.getUserMedia({video: {facingMode: 'user', width: {ideal: 640}, height: {ideal: 480}}})
@@ -42,10 +52,10 @@ function startCamera() {
 
             setTimeout(function() {
                 if (video.videoWidth > 0 && video.videoHeight > 0) {
-                    document.getElementById('resultBox').textContent = 'Camera is ON! Click "Capture Frame" to capture.';
+                    setStatusMessage('resultBox', 'Camera is ON! Click "Capture Frame" to capture.', 'success');
                     document.getElementById('captureButton').disabled = false;
                 } else {
-                    document.getElementById('resultBox').textContent = 'Camera loaded but video not visible. Try refreshing.';
+                    setStatusMessage('resultBox', 'Camera loaded but video not visible. Try refreshing.', 'warning');
                 }
             }, 1500);
         })
@@ -55,7 +65,7 @@ function startCamera() {
             if (err.name === 'NotFoundError') msg = 'No camera found on device.';
             if (err.name === 'NotReadableError') msg = 'Camera is in use by another app.';
             if (err.name === 'SecurityError') msg = 'Must use LOCALHOST not IP. Go to http://localhost:5000';
-            document.getElementById('resultBox').textContent = 'Camera Error: ' + msg;
+            setStatusMessage('resultBox', 'Camera Error: ' + msg, 'error');
             document.getElementById('captureButton').disabled = true;
         });
 }
@@ -68,7 +78,7 @@ document.getElementById('captureButton').onclick = function() {
 
     const video = document.getElementById('video');
     if (!video.srcObject) {
-        document.getElementById('resultBox').textContent = 'Camera not active!';
+        setStatusMessage('resultBox', 'Camera not active!', 'error');
         return;
     }
 
@@ -77,7 +87,7 @@ document.getElementById('captureButton').onclick = function() {
     canvas.height = video.videoHeight;
 
     if (canvas.width === 0 || canvas.height === 0) {
-        document.getElementById('resultBox').textContent = 'Video not ready. Wait a moment and try again.';
+        setStatusMessage('resultBox', 'Video not ready. Wait a moment and try again.', 'warning');
         return;
     }
 
@@ -87,12 +97,17 @@ document.getElementById('captureButton').onclick = function() {
     const imgData = canvas.toDataURL('image/jpeg');
     capturedImages.push(imgData);
     document.getElementById('capturedCount').textContent = capturedImages.length;
-    document.getElementById('resultBox').textContent = 'Captured: ' + capturedImages.length + '/5';
+    if (capturedImages.length >= 5) {
+        document.getElementById('captureButton').textContent = 'Upload Photos';
+        setStatusMessage('resultBox', 'Captured 5/5! Click "Upload Photos" to finish.', 'success');
+    } else {
+        setStatusMessage('resultBox', 'Captured: ' + capturedImages.length + '/5');
+    }
 };
 
 function uploadImages() {
     document.getElementById('captureButton').disabled = true;
-    document.getElementById('resultBox').textContent = 'Uploading ' + capturedImages.length + ' images...';
+    setStatusMessage('resultBox', 'Uploading ' + capturedImages.length + ' images...');
 
     fetch('/student/register-face', {
         method: 'POST',
@@ -102,18 +117,18 @@ function uploadImages() {
     .then(r => r.json())
     .then(d => {
         if (d.status === 'ok') {
-            document.getElementById('resultBox').textContent = '✅ Saved ' + d.saved + ' photo(s). Total on record: ' + d.total_photos + '. Redirecting…';
+            setStatusMessage('resultBox', '✅ Saved ' + d.saved + ' photo(s). Total on record: ' + d.total_photos + '. Redirecting…', 'success');
             if (stream) { stream.getTracks().forEach(t => t.stop()); }
             setTimeout(function() { window.location.href = '/student/profile'; }, 1800);
         } else {
-            document.getElementById('resultBox').textContent = '❌ ' + (d.error || 'Unknown error');
+            setStatusMessage('resultBox', '❌ ' + (d.error || 'Unknown error'), 'error');
             document.getElementById('captureButton').disabled = false;
             capturedImages = [];
             document.getElementById('capturedCount').textContent = '0';
         }
     })
     .catch(e => {
-        document.getElementById('resultBox').textContent = 'Error: ' + e.message;
+        setStatusMessage('resultBox', 'Error: ' + e.message, 'error');
         document.getElementById('captureButton').disabled = false;
     });
 }

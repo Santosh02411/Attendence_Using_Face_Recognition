@@ -52,7 +52,7 @@ window.addEventListener('load', function() {
 });
 
 function startCamera() {
-    document.getElementById('resultBox').textContent = 'Requesting camera... Make sure to click ALLOW when browser asks!';
+    setStatusMessage('resultBox', 'Requesting camera... Make sure to click ALLOW when browser asks!');
     document.getElementById('markAttendanceBtn').disabled = true;
     
     // Try to get camera with better constraints for proper orientation
@@ -77,10 +77,10 @@ function startCamera() {
                 
                 setTimeout(function() {
                     if (video.videoWidth > 0 && video.videoHeight > 0) {
-                        document.getElementById('resultBox').textContent = 'Camera is ON! Position your face and click Mark Attendance.';
+                        setStatusMessage('resultBox', 'Camera is ON! Position your face and click Mark Attendance.', 'success');
                         document.getElementById('markAttendanceBtn').disabled = false;
                     } else {
-                        document.getElementById('resultBox').textContent = 'Camera loaded but video not visible. Try refreshing.';
+                        setStatusMessage('resultBox', 'Camera loaded but video not visible. Try refreshing.', 'warning');
                     }
                 }, 1500);
             });
@@ -91,7 +91,7 @@ function startCamera() {
             if (err.name === 'NotFoundError') msg = 'No camera found on device.';
             if (err.name === 'NotReadableError') msg = 'Camera is in use by another app.';
             if (err.name === 'SecurityError') msg = 'Must use LOCALHOST not IP. Go to http://localhost:5000';
-            document.getElementById('resultBox').textContent = 'Camera Error: ' + msg;
+            setStatusMessage('resultBox', 'Camera Error: ' + msg, 'error');
             document.getElementById('markAttendanceBtn').disabled = true;
         });
 }
@@ -99,7 +99,7 @@ function startCamera() {
 document.getElementById('markAttendanceBtn').onclick = function() {
     const video = document.getElementById('video');
     if (!video.srcObject) {
-        document.getElementById('resultBox').textContent = 'Camera not active!';
+        setStatusMessage('resultBox', 'Camera not active!', 'error');
         return;
     }
     
@@ -108,7 +108,7 @@ document.getElementById('markAttendanceBtn').onclick = function() {
     canvas.height = video.videoHeight;
     
     if (canvas.width === 0 || canvas.height === 0) {
-        document.getElementById('resultBox').textContent = 'Video not ready. Wait a moment and try again.';
+        setStatusMessage('resultBox', 'Video not ready. Wait a moment and try again.', 'warning');
         return;
     }
 
@@ -120,7 +120,7 @@ document.getElementById('markAttendanceBtn').onclick = function() {
     }
 
     document.getElementById('markAttendanceBtn').disabled = true;
-    document.getElementById('resultBox').textContent = 'Preparing liveness check…';
+    setStatusMessage('resultBox', 'Preparing liveness check…');
 
     // Capture a short burst of frames spread over ~2s from the live video
     // feed. The server runs two independent liveness layers on this
@@ -145,7 +145,7 @@ document.getElementById('markAttendanceBtn').onclick = function() {
         })
         .catch(e => {
             console.error('Could not fetch liveness challenge:', e);
-            document.getElementById('resultBox').textContent = '❌ Could not start liveness check. Please try again.';
+            setStatusMessage('resultBox', '❌ Could not start liveness check. Please try again.', 'error');
             document.getElementById('markAttendanceBtn').disabled = false;
         });
 
@@ -158,9 +158,9 @@ document.getElementById('markAttendanceBtn').onclick = function() {
         function captureNext(i) {
             frames.push(captureFrame());
             if (promptText) {
-                document.getElementById('resultBox').textContent = '👉 ' + promptText;
+                setStatusMessage('resultBox', '👉 ' + promptText);
             } else {
-                document.getElementById('resultBox').textContent = 'Hold still…';
+                setStatusMessage('resultBox', 'Hold still…');
             }
             if (frames.length < FRAME_COUNT) {
                 setTimeout(() => captureNext(i + 1), FRAME_GAP_MS);
@@ -173,7 +173,7 @@ document.getElementById('markAttendanceBtn').onclick = function() {
     }
 
     function submitFrames(frames, challengeToken) {
-        document.getElementById('resultBox').textContent = 'Processing face recognition...';
+        setStatusMessage('resultBox', 'Processing face recognition...');
 
         const card = document.querySelector('.card.wide-card');
         const payload = {
@@ -198,11 +198,11 @@ document.getElementById('markAttendanceBtn').onclick = function() {
         })
         .then(d => {
             if (d.status === 'present') {
-                document.getElementById('resultBox').textContent = '✅ ' + d.message;
+                setStatusMessage('resultBox', '✅ ' + d.message, 'success');
                 document.getElementById('markAttendanceBtn').textContent = 'Attendance Marked';
                 document.getElementById('markAttendanceBtn').disabled = true;
             } else if (d.status === 'already_marked') {
-                document.getElementById('resultBox').textContent = '⚠️ ' + d.message;
+                setStatusMessage('resultBox', '⚠️ ' + d.message, 'warning');
                 document.getElementById('markAttendanceBtn').textContent = 'Already Marked';
                 document.getElementById('markAttendanceBtn').disabled = true;
             } else if (d.status === 'error') {
@@ -215,7 +215,7 @@ document.getElementById('markAttendanceBtn').onclick = function() {
         })
         .catch(e => {
             console.error('Error:', e);
-            document.getElementById('resultBox').textContent = '❌ Network error: ' + e.message;
+            setStatusMessage('resultBox', '❌ Network error: ' + e.message, 'error');
             document.getElementById('markAttendanceBtn').disabled = false;
         });
     }

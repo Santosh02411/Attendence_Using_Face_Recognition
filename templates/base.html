@@ -31,7 +31,8 @@
             </span>
             Face Attendance
         </div>
-        <nav>
+        <div class="nav-row">
+            <nav class="nav-links">
             {% if session.user_type == 'admin' %}
             <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
             <a href="{{ url_for('admin_sessions') }}">Manage Sessions</a>
@@ -55,13 +56,14 @@
             <a href="{{ url_for('student_login') }}">Student Login</a>
             <a href="{{ url_for('student_register') }}">Student Registration</a>
             {% endif %}
-            
+            </nav>
+
             <button class="theme-toggle" id="theme-toggle" aria-label="Toggle Dark Mode">
                 <svg id="theme-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                     <!-- Icon will be set by JS -->
                 </svg>
             </button>
-        </nav>
+        </div>
     </header>
     <main class="page-container">
         {% with messages = get_flashed_messages(with_categories=true) %}
