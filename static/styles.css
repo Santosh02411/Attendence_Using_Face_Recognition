@@ -140,6 +140,7 @@ table td.numeric,
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   padding: 0.9rem 2rem;
   background: var(--nav-bg);
   backdrop-filter: blur(10px);
@@ -158,6 +159,8 @@ table td.numeric,
   font-size: 1.25rem;
   color: var(--text);
   letter-spacing: -0.01em;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .topbar .brand-mark {
@@ -177,12 +180,24 @@ table td.numeric,
   height: 1.15rem;
 }
 
-.topbar nav {
+/* Groups the wrapping nav-links list with the theme toggle so the
+   toggle can stay pinned at the end of its own row (see the mobile
+   override below) instead of getting caught up in the link-wrapping
+   and stranded alone on a ragged trailing line. */
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.topbar nav.nav-links {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 0;
 }
 
 .topbar nav a {
@@ -192,6 +207,7 @@ table td.numeric,
   font-size: 0.88rem;
   padding: 0.4rem 0.7rem;
   border-radius: 6px;
+  white-space: nowrap;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
 
@@ -212,6 +228,7 @@ table td.numeric,
   align-items: center;
   justify-content: center;
   border-radius: 8px;
+  flex-shrink: 0;
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
@@ -267,6 +284,7 @@ table td.numeric,
   margin: 3.5rem auto;
   position: relative;
   overflow: hidden;
+  border-left: 3px solid var(--primary);
 }
 
 /* Signature moment: a single scan-line sweep the first time a login
@@ -431,6 +449,58 @@ button:disabled, .button:disabled {
   gap: 1rem;
 }
 
+/* Wraps a <video> element so it has something intentional to show
+   before the camera stream starts, instead of a bare black rectangle
+   that reads as broken. The video itself has a transparent background
+   (see the `video` rule below) so this placeholder shows through until
+   real frames start painting over it — no JS coordination needed. */
+.camera-frame {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: linear-gradient(155deg, var(--card-alt), var(--border));
+  box-shadow: var(--shadow-sm);
+}
+
+.camera-frame .camera-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 1rem;
+  pointer-events: none;
+}
+
+.camera-frame .camera-placeholder svg {
+  width: 2.25rem;
+  height: 2.25rem;
+  opacity: 0.6;
+}
+
+.camera-frame video {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
 video {
   width: 100%;
   height: auto;
@@ -463,6 +533,39 @@ video {
   color: var(--primary);
   font-weight: 500;
   border: 1px solid var(--border);
+}
+
+/* An empty result box (nothing written into it yet) should take up no
+   space at all rather than show as a bare, unexplained pale rectangle
+   above the form. */
+.result-box:empty {
+  display: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+/* Status variants — set via JS (see setStatusMessage() in app.js) so a
+   login failure, a camera error, and a success message are
+   distinguishable at a glance instead of all sharing the same neutral
+   teal "info" look. Reuses the same semantic tokens as badges/meters
+   elsewhere in the app rather than inventing new colors. */
+.result-box.success {
+  background: var(--status-good-bg);
+  color: var(--status-good-fg);
+  border-color: transparent;
+}
+
+.result-box.error {
+  background: var(--status-bad-bg);
+  color: var(--status-bad-fg);
+  border-color: transparent;
+}
+
+.result-box.warning {
+  background: var(--status-warn-bg);
+  color: var(--status-warn-fg);
+  border-color: transparent;
 }
 
 .flash-messages {
@@ -672,6 +775,8 @@ table tr:hover td {
   padding: 0.75rem;
   background: var(--card-alt);
   border-radius: 8px;
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
 }
 
 .profile-details strong {
@@ -883,8 +988,20 @@ table tr:hover td {
   .topbar .brand {
     justify-content: center;
   }
-  .topbar nav {
-    justify-content: center;
+  .nav-row {
+    width: 100%;
+  }
+  .topbar nav.nav-links {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 1.5rem), transparent 100%);
+  }
+  .topbar nav.nav-links::-webkit-scrollbar {
+    display: none;
   }
   .page-container {
     padding: 1.5rem 1rem 3rem;

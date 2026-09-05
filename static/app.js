@@ -1,6 +1,22 @@
 // App.js - reserved for future use
 // Camera initialization is handled by individual pages
 
+// Shared status-message helper for the various "#resultBox" elements
+// used on login/register/attendance pages. Setting message text alone
+// isn't enough to tell a success apart from an error at a glance, so
+// this also toggles a color-coded class (see .result-box.success/
+// .error/.warning in styles.css) — call with no `type` for the
+// existing neutral/informational look.
+function setStatusMessage(elOrId, message, type) {
+    const el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
+    if (!el) return;
+    el.textContent = message;
+    el.classList.remove('success', 'error', 'warning');
+    if (type) {
+        el.classList.add(type);
+    }
+}
+
 // Shared CSRF helper: reads the token from the <meta name="csrf-token"> tag
 // (rendered per-page via Flask-WTF's csrf_token()) and returns headers to
 // attach to any same-origin fetch() POST/PUT/DELETE call.
