@@ -18,7 +18,6 @@ A comprehensive attendance management system powered by face recognition technol
 - [Notifications](#-notifications)
 - [Self-Service Password Reset](#-self-service-password-reset)
 - [SSO / Institutional Login](#-sso--institutional-login)
-- [Deeper Analytics](#-deeper-analytics)
 - [Configuration](#-configuration)
 - [Database Schema](#-database-schema)
 - [User Interface](#-user-interface)
@@ -45,7 +44,6 @@ A comprehensive attendance management system powered by face recognition technol
 - **Notifications**: Opt-in email (SMTP) and SMS (Twilio) alerts when a student's attendance is marked and when their overall attendance drops below the low-attendance threshold — see "Notifications" below
 - **Self-Service Password Reset**: A student who has an email on file can reset their own forgotten password via an emailed, single-use, expiring link — no admin needed — see "Self-Service Password Reset" below
 - **SSO / Institutional Login**: Optional "Sign in with Google" for students, linked to an existing account by email — see "SSO / Institutional Login" below
-- **Deeper Analytics**: Cohort comparison by branch/semester/subject, plus rule-based (not ML) risk-trend predictions for declining attendance — see "Deeper Analytics" below
 - **Real-time Recognition**: Live face detection and recognition during attendance sessions
 - **Bulk Student Import**: Onboard a whole class at once via CSV upload (name/roll number/branch/semester, with auto-generated temporary passwords); each student adds their own face photos afterward
 - **Export Functionality**: Export attendance records, session rosters, and attendance reports as CSV files
@@ -145,7 +143,6 @@ Attendance_Using_Face_Recognition/
 ├── logging_config.py               # Structured (JSON) logging + request-id plumbing — see "Structured Logging"
 ├── error_reporting.py              # Optional Sentry integration — see "Error Alerting"
 ├── notifications.py                 # Optional email/SMS alerts — see "Notifications"
-├── analytics.py                     # Cohort comparison + risk-trend predictions — see "Deeper Analytics"
 ├── face_security.py                 # Active liveness challenges + anti-spoof heuristics — see "Anti-Proxy / Face Recognition Security"
 ├── wsgi.py                         # Production WSGI entrypoint (gunicorn/waitress) — see "Deployment"
 ├── gunicorn.conf.py                # Gunicorn server tuning (workers, timeouts, JSON logging)
@@ -180,7 +177,6 @@ Attendance_Using_Face_Recognition/
 │   ├── admin_dashboard.html      # Admin dashboard
 │   ├── admin_sessions.html       # Session management (+ overlap detection)
 │   ├── admin_students.html       # Student management (search, pagination, reset, delete)
-│   ├── admin_analytics.html      # Cohort comparison + risk-trend predictions — see "Deeper Analytics"
 │   ├── admin_bulk_import.html    # CSV bulk student import + results summary
 │   ├── admin_attendance.html     # Paginated all-attendance-records view
 │   ├── admin_settings.html       # Admin account management + self password change
@@ -195,7 +191,7 @@ Attendance_Using_Face_Recognition/
 │   ├── student_attend.html       # Student self-service attendance marking
 │   └── student_history.html      # Attendance history
 ├── static/                        # CSS and shared JS (styles.css, app.js)
-├── tests/                          # pytest test suite (481 tests) — see "Running Tests"
+├── tests/                          # pytest test suite (464 tests) — see "Running Tests"
 └── archive/                       # Superseded standalone CLI scripts, kept
     └── legacy_scripts/            # for reference only — not used by app.py
 ```
@@ -778,43 +774,6 @@ effectively unique in practice, even though the DB index itself allows
 duplicate `NULL`s — see the index comment in
 `0009_add_notifications_and_sso.py`).
 
-## 📈 Deeper Analytics
-
-`/admin/analytics` (linked from the Reports page, and from the main nav) builds on the same
-per-student report data as `/admin/reports` (see `_compute_attendance_report()`), adding two things
-that page doesn't cover — both implemented in `analytics.py`:
-
-### Cohort Comparison
-
-Average attendance percentage grouped three ways over the selected date range:
-
-- **By branch** and **by semester** — computed by grouping the same per-student report rows
-  `/admin/reports` already produces (`analytics.aggregate_cohort()`), so the numbers always match.
-- **By subject** — computed by calling `_compute_attendance_report(subject_id=...)` once per subject
-  and averaging (`analytics.build_subject_cohorts()`); a subject with no sessions in the selected
-  range is skipped rather than shown as a misleading 0%.
-
-### Risk-Trend Predictions
-
-Flags students whose *recent* attendance is declining, ranked most urgent first. For each student
-with at least 4 sessions of history:
-
-1. Their attendance rate over their most recent sessions ("recent") is compared against their rate
-   over everything before that ("earlier").
-2. If recent is declining relative to earlier, their overall percentage is projected forward assuming
-   the next few sessions go the same way as the last few did.
-3. They're flagged **Critical** (already below threshold and not improving), **High** (still above
-   threshold today, but the projection crosses below it), or **Medium** (a meaningful decline that
-   isn't projected to cross the threshold soon) — a **Sessions to Threshold** estimate is shown for
-   the High case. A student already below threshold but clearly *recovering* is deliberately left off
-   this list — that current-state fact is already covered by the dashboard's Low Attendance Alerts,
-   and labeling an improving student "Critical" would be misleading.
-
-**This is a transparent, rule-based extrapolation — explicitly NOT a machine-learning model.** Every
-flagged student's own recent-vs-earlier numbers are shown alongside the flag, so the reasoning is
-directly inspectable rather than a score an admin has to take on faith. A genuine ML-based forecast
-remains a separate, unimplemented item in "Future Enhancements" below.
-
 ## 🔧 Configuration
 
 ### Database Setup
@@ -1217,7 +1176,7 @@ The application includes debug features:
 
 ## ✅ Running Tests
 
-The test suite (481 tests) covers authentication (password hashing, login
+The test suite (464 tests) covers authentication (password hashing, login
 flows, account lockout), CSRF protection, rate limiting, CAPTCHA,
 password strength policy, self-service and admin-assisted password
 changes, SQL-injection resistance, the embedding-based face recognition
@@ -1227,15 +1186,12 @@ checks, IP allowlisting, request size limits, admin account management,
 the audit log, the student profile page, bulk CSV import, session
 overlap detection, pagination, reverse-proxy IP handling, the
 attendance-marking security properties (session-derived identity, 1:1
-verification, no cross-identity leakage), the notifications/
+verification, no cross-identity leakage), and the notifications/
 password-reset/SSO additions (safe-no-op behavior when unconfigured,
 token issuance/expiry/single-use for both the student and admin reset
 flows, the email-matching/no-auto-create rule for Google login, and the
 account-linking flows from registration and from the profile page —
-see `tests/test_notifications_and_sso.py`), and the deeper-analytics
-additions (cohort aggregation/sorting, each risk-tier's threshold math
-verified by hand, the below-threshold-but-improving exclusion, and the
-`/admin/analytics` route itself — see `tests/test_analytics.py`).
+see `tests/test_notifications_and_sso.py`).
 
 Every test runs against a temporary, isolated database and Datasets
 folder — the suite never touches your real `database/` or `Datasets/`.
@@ -1702,7 +1658,7 @@ to `archive/legacy_scripts/` for reference — see `archive/README.md`.
 - [ ] Multi-language support
 - [ ] Mobile application
 - [ ] Cloud storage integration
-- [x] ~~Deeper analytics~~ — done: see "Deeper Analytics" (cohort comparison by branch/semester/subject, and a rule-based risk-trend prediction — not a machine-learning model, see its own section for that distinction)
+- [ ] Deeper analytics (cohort comparisons, predictive risk scoring) beyond the current subject/date-range/semester reports
 - [x] ~~SMS/email notifications~~ — done: see "Notifications" (opt-in SMTP email + Twilio SMS for attendance marks and low-attendance alerts)
 - [ ] Biometric integration (fingerprint, iris)
 - [ ] AI-powered attendance predictions

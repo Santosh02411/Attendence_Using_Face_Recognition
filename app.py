@@ -42,7 +42,6 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
-import analytics
 import config as cfg
 import db_migrations
 import error_reporting
@@ -1090,7 +1089,6 @@ def _compute_attendance_report(subject_id=None, start_date=None, end_date=None, 
             'student_id': student['id'],
             'name': student['name'],
             'roll_no': student['roll_no'],
-            'branch': student['branch'],
             'semester': student['semester'],
             'total_sessions': total_sessions,
             'present': present_count,
@@ -1121,39 +1119,6 @@ def _compute_attendance_report(subject_id=None, start_date=None, end_date=None, 
         for k, v in sorted(buckets.items())
     ]
     return report_rows, trend
-
-
-def _ordered_sessions_and_status(start_date=None, end_date=None):
-    """Shared by the analytics (cohort/risk-prediction) routes: every
-    session with a parseable date, sorted chronologically, optionally
-    restricted to a date range, plus a {(session_id, student_id):
-    status} lookup covering all of them. Mirrors the session-filtering
-    half of _compute_attendance_report() above, factored out since the
-    analytics routes need the sessions themselves in date order (for a
-    per-student chronological outcome sequence) rather than just a
-    flat total."""
-    all_sessions = query_db('SELECT * FROM sessions')
-    sessions = []
-    for s in all_sessions:
-        parsed_date = _parse_session_date(s['date'])
-        if parsed_date is None:
-            continue
-        if start_date and parsed_date < start_date:
-            continue
-        if end_date and parsed_date > end_date:
-            continue
-        row = dict(s)
-        row['parsed_date'] = parsed_date
-        sessions.append(row)
-    sessions.sort(key=lambda s: (s['parsed_date'], s.get('time') or ''))
-
-    if not sessions:
-        return [], {}
-    session_ids = [s['id'] for s in sessions]
-    placeholders = ','.join('?' for _ in session_ids)
-    attendance_rows = query_db(f'SELECT student_id, session_id, status FROM attendance WHERE session_id IN ({placeholders})', tuple(session_ids))  # nosec B608
-    status_by_pair = {(r['session_id'], r['student_id']): r['status'] for r in attendance_rows}
-    return sessions, status_by_pair
 
 
 def generate_captcha_text():
@@ -4631,62 +4596,6 @@ def export_attendance_report():
                           row['present'], row['late'], row['absent'], row['percentage'], 'Yes' if row['below_threshold'] else 'No'])
     csv_file.seek(0)
     return send_file(io.BytesIO(csv_file.getvalue().encode('utf-8')), mimetype='text/csv', as_attachment=True, download_name='attendance_report.csv')
-
-
-@app.route('/admin/analytics')
-def admin_analytics():
-    """Deeper analytics beyond the subject/date-range/semester reports
-    on /admin/reports — see analytics.py's module docstring for the
-    reasoning behind both pieces here:
-
-    - Cohort comparison: average attendance by branch, semester, and
-      subject, so an admin can see e.g. "CSE is running noticeably
-      lower than ECE this month" at a glance.
-    - Risk-trend predictions: students whose recent attendance is
-      declining, with a simple forward projection of how many more
-      sessions at that rate would put them below threshold — a
-      transparent heuristic, not a machine-learning forecast (see
-      analytics.compute_risk_predictions()'s docstring).
-    """
-    if not session.get('admin_user'):
-        return redirect(url_for('login'))
-
-    def _parse_input_date(field):
-        raw = request.args.get(field)
-        if not raw:
-            return None
-        try:
-            return datetime.strptime(raw, '%Y-%m-%d').date()
-        except ValueError:
-            return None
-
-    start_date = _parse_input_date('start_date')
-    end_date = _parse_input_date('end_date')
-
-    subjects = query_db('SELECT * FROM subjects ORDER BY name')
-    all_report_rows, _trend = _compute_attendance_report(start_date=start_date, end_date=end_date)
-    by_branch = analytics.aggregate_cohort(all_report_rows, 'branch')
-    by_semester = analytics.aggregate_cohort(all_report_rows, 'semester')
-    by_subject = analytics.build_subject_cohorts(subjects, _compute_attendance_report,
-                                                  start_date=start_date, end_date=end_date)
-
-    students = query_db('SELECT * FROM students ORDER BY name')
-    ordered_sessions, status_by_pair = _ordered_sessions_and_status(start_date=start_date, end_date=end_date)
-    risk_predictions = analytics.compute_risk_predictions(
-        students, ordered_sessions, status_by_pair, cfg.LATE_COUNTS_AS_PRESENT,
-        cfg.LOW_ATTENDANCE_THRESHOLD_PERCENT,
-    )
-
-    return render_template(
-        'admin_analytics.html',
-        by_branch=by_branch, by_semester=by_semester, by_subject=by_subject,
-        risk_predictions=risk_predictions, threshold=cfg.LOW_ATTENDANCE_THRESHOLD_PERCENT,
-        total_sessions_considered=len(ordered_sessions),
-        filters={
-            'start_date': request.args.get('start_date', ''),
-            'end_date': request.args.get('end_date', ''),
-        },
-    )
 
 
 @app.route('/student/register-face', methods=['GET', 'POST'])
