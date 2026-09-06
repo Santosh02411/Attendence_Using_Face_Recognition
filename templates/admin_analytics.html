@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <h2 style="margin-top: 0;">Deeper Analytics</h2>
+    <p style="color: var(--muted);">
+        Cohort comparison and risk-trend predictions, on top of the same data as
+        <a href="{{ url_for('admin_reports') }}">Attendance Reports</a>. The risk predictions below are a
+        transparent recent-vs-earlier trend projection — not a machine-learning forecast — so every flagged
+        student's own numbers explain why they're flagged.
+    </p>
+
+    <form method="get" class="inline-form" style="flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem;">
+        <input type="date" name="start_date" value="{{ filters.start_date }}" title="Start date">
+        <input type="date" name="end_date" value="{{ filters.end_date }}" title="End date">
+        <button type="submit" class="button small">Apply Filters</button>
+        <a href="{{ url_for('admin_analytics') }}" class="button small secondary">Reset</a>
+    </form>
+</div>
+
+<div class="card wide-card">
+    <h3 style="margin-top: 0;">Cohort Comparison</h3>
+    <p style="color: var(--muted);">Average attendance percentage by branch, semester, and subject, over {{ total_sessions_considered }} session(s) in range.</p>
+
+    <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+        <div>
+            <h4>By Branch</h4>
+            {% if by_branch %}
+            {% for cohort in by_branch %}
+            <div style="margin-bottom: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                    <span>{{ cohort.label }} <span style="color: var(--muted);">({{ cohort.student_count }} students)</span></span>
+                    <span>{{ cohort.average_percentage }}%</span>
+                </div>
+                <div class="meter" title="{{ cohort.average_percentage }}%">
+                    <div class="meter-fill {% if cohort.average_percentage < threshold %}danger{% elif cohort.average_percentage < 90 %}warning{% endif %}" style="width: {{ cohort.average_percentage }}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p>No data for the current filters.</p>
+            {% endif %}
+        </div>
+
+        <div>
+            <h4>By Semester</h4>
+            {% if by_semester %}
+            {% for cohort in by_semester %}
+            <div style="margin-bottom: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                    <span>Semester {{ cohort.label }} <span style="color: var(--muted);">({{ cohort.student_count }} students)</span></span>
+                    <span>{{ cohort.average_percentage }}%</span>
+                </div>
+                <div class="meter" title="{{ cohort.average_percentage }}%">
+                    <div class="meter-fill {% if cohort.average_percentage < threshold %}danger{% elif cohort.average_percentage < 90 %}warning{% endif %}" style="width: {{ cohort.average_percentage }}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p>No data for the current filters.</p>
+            {% endif %}
+        </div>
+
+        <div>
+            <h4>By Subject</h4>
+            {% if by_subject %}
+            {% for cohort in by_subject %}
+            <div style="margin-bottom: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                    <span>{{ cohort.label }} <span style="color: var(--muted);">({{ cohort.student_count }} students)</span></span>
+                    <span>{{ cohort.average_percentage }}%</span>
+                </div>
+                <div class="meter" title="{{ cohort.average_percentage }}%">
+                    <div class="meter-fill {% if cohort.average_percentage < threshold %}danger{% elif cohort.average_percentage < 90 %}warning{% endif %}" style="width: {{ cohort.average_percentage }}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p>No subjects have sessions in range.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card wide-card">
+    <h3 style="margin-top: 0;">Risk-Trend Predictions</h3>
+    <p style="color: var(--muted);">
+        Students whose recent attendance is declining, ranked most urgent first. "Projected" assumes their
+        last few sessions' rate continues for {{ 5 }} more sessions. Students with at least 4 sessions of
+        history and a stable or improving trend aren't shown here.
+    </p>
+    {% if risk_predictions %}
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Roll No</th>
+                    <th>Name</th>
+                    <th>Branch / Sem</th>
+                    <th>Current %</th>
+                    <th>Recent %</th>
+                    <th>Trend</th>
+                    <th>Projected %</th>
+                    <th>Sessions to Threshold</th>
+                    <th>Risk</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in risk_predictions %}
+                <tr>
+                    <td>{{ p.roll_no }}</td>
+                    <td>{{ p.name }}</td>
+                    <td>{{ p.branch }} / {{ p.semester }}</td>
+                    <td>{{ p.current_percentage }}%</td>
+                    <td>{{ p.recent_percentage }}%</td>
+                    <td style="color: {% if p.trend_delta < 0 %}var(--status-bad-fg){% elif p.trend_delta > 0 %}var(--status-good-fg){% else %}var(--muted){% endif %};">
+                        {{ '%+.1f'|format(p.trend_delta) }} pts
+                    </td>
+                    <td>{{ p.projected_percentage }}%</td>
+                    <td>{{ p.sessions_until_threshold if p.sessions_until_threshold is not none else '—' }}</td>
+                    <td>
+                        <span class="status-badge {% if p.risk_level == 'Critical' %}critical{% elif p.risk_level == 'High' %}status-absent{% else %}status-late{% endif %}">
+                            {{ p.risk_level }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No students currently show a declining attendance trend worth flagging.</p>
+    {% endif %}
+</div>
+{% endblock %}

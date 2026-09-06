@@ -3,7 +3,10 @@
 <div class="card wide-card">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
         <h2 style="margin: 0;">Attendance Reports</h2>
-        <a href="{{ url_for('export_attendance_report', subject_id=filters.subject_id, semester=filters.semester, start_date=filters.start_date, end_date=filters.end_date) }}" class="button small">Export CSV</a>
+        <div style="display: flex; gap: 0.5rem;">
+            <a href="{{ url_for('admin_analytics') }}" class="button small secondary">Deeper Analytics</a>
+            <a href="{{ url_for('export_attendance_report', subject_id=filters.subject_id, semester=filters.semester, start_date=filters.start_date, end_date=filters.end_date) }}" class="button small">Export CSV</a>
+        </div>
     </div>
     <p style="color: var(--muted);">
         Filter by subject, date range, and/or semester to build a subject-wise, date-range, or semester report — the
