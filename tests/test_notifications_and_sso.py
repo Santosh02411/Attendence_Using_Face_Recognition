@@ -275,18 +275,20 @@ class TestGoogleSSO:
 
 
 class FakeGoogleClient:
-    """Stands in for Authlib's OAuth client during tests — never
-    contacts Google. authorize_redirect() returns an ordinary Flask
-    redirect so /auth/google/login and /auth/google/link can be
-    exercised without a real consent screen; authorize_access_token()/
-    userinfo() return the fixed profile the test configured."""
+    """Stands in for an Authlib OAuth client during tests — never
+    contacts the real provider (works equally for the 'google' and
+    'oidc' clients, since both are ordinary Authlib OAuth clients with
+    the same interface). authorize_redirect() returns an ordinary Flask
+    redirect so the login/link routes can be exercised without a real
+    consent screen; authorize_access_token()/userinfo() return the
+    fixed profile the test configured."""
 
     def __init__(self, userinfo):
         self._userinfo = userinfo
 
     def authorize_redirect(self, redirect_uri):
         from flask import redirect
-        return redirect('https://accounts.google.com/fake-consent')
+        return redirect('https://example.com/fake-consent')
 
     def authorize_access_token(self):
         return {'userinfo': self._userinfo}
@@ -296,8 +298,11 @@ class FakeGoogleClient:
 
 
 class FakeOAuth:
-    def __init__(self, userinfo):
-        self.google = FakeGoogleClient(userinfo)
+    def __init__(self, google_userinfo=None, oidc_userinfo=None):
+        if google_userinfo is not None:
+            self.google = FakeGoogleClient(google_userinfo)
+        if oidc_userinfo is not None:
+            self.oidc = FakeGoogleClient(oidc_userinfo)
 
 
 class TestGoogleOAuthLoginFlow:
@@ -326,7 +331,115 @@ class TestGoogleOAuthLoginFlow:
         assert b'No student account found' in resp.data
 
 
-class TestGoogleAccountLinking:
+class TestGenericOidcSSO:
+    """Exercises the generic-OIDC provider (Okta/Azure AD/Keycloak/etc.)
+    added alongside Google — same mechanics, a separate
+    oauth_oidc_sub column, and its own display name (from
+    OAUTH_OIDC_PROVIDER_NAME) in flash messages."""
+
+    def test_login_page_hides_oidc_button_when_disabled(self, client, isolated_paths):
+        resp = client.get('/student/login')
+        assert b'Institution SSO' not in resp.data
+
+    def test_oidc_login_redirects_with_flash_when_not_configured(self, client, isolated_paths):
+        resp = client.get('/auth/oidc/login', follow_redirects=True)
+        assert resp.status_code == 200
+        assert b'not configured' in resp.data
+
+    def test_oidc_callback_redirects_with_flash_when_not_configured(self, client, isolated_paths):
+        resp = client.get('/auth/oidc/callback', follow_redirects=True)
+        assert resp.status_code == 200
+        assert b'not configured' in resp.data
+
+    def test_login_matches_existing_student_by_email(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        _register_student(client, roll_no='R500', email='r500@example.edu')
+        monkeypatch.setattr(app_module, 'oauth',
+                             FakeOAuth(oidc_userinfo={'sub': 'oidc-sub-1', 'email': 'r500@example.edu'}))
+
+        resp = client.get('/auth/oidc/callback', follow_redirects=True)
+        assert resp.status_code == 200
+        assert b'Welcome' in resp.data or b'Active Attendance Sessions' in resp.data
+
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        row = conn.execute("SELECT oauth_oidc_sub, oauth_google_sub FROM students WHERE roll_no='R500'").fetchone()
+        conn.close()
+        assert row[0] == 'oidc-sub-1'
+        assert row[1] is None  # google column untouched by an OIDC login
+
+    def test_login_with_no_matching_email_is_rejected(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'oauth',
+                             FakeOAuth(oidc_userinfo={'sub': 'oidc-sub-2', 'email': 'nobody@example.edu'}))
+        resp = client.get('/auth/oidc/callback', follow_redirects=True)
+        assert b'No student account found' in resp.data
+
+    def test_uses_configured_provider_display_name(self, client, isolated_paths, monkeypatch):
+        monkeypatch.setattr(cfg, 'OAUTH_OIDC_PROVIDER_NAME', 'Acme University SSO')
+        resp = client.get('/auth/oidc/login', follow_redirects=True)
+        assert b'Acme University SSO' in resp.data
+        assert b'not configured' in resp.data
+
+    def test_link_from_registration_logs_in_and_links_oidc(self, client, isolated_paths, monkeypatch):
+        import app as app_module
+        student_id = _register_student(client, roll_no='R501')
+        monkeypatch.setattr(app_module, 'oauth',
+                             FakeOAuth(oidc_userinfo={'sub': 'oidc-sub-4', 'email': 'linked501@example.edu'}))
+
+        client.get('/auth/oidc/link')
+        resp = client.get('/auth/oidc/callback', follow_redirects=True)
+        assert b'connected' in resp.data.lower()
+
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        row = conn.execute('SELECT oauth_oidc_sub, email FROM students WHERE id=?', (student_id,)).fetchone()
+        conn.close()
+        assert row[0] == 'oidc-sub-4'
+        assert row[1] == 'linked501@example.edu'
+
+    def test_google_and_oidc_are_independent_columns(self, client, isolated_paths, monkeypatch):
+        """A student can link both providers without either overwriting
+        the other's column."""
+        import app as app_module
+        _register_student(client, roll_no='R502', email='both502@example.edu')
+        monkeypatch.setattr(app_module, 'oauth', FakeOAuth(
+            google_userinfo={'sub': 'google-sub-both', 'email': 'both502@example.edu'},
+            oidc_userinfo={'sub': 'oidc-sub-both', 'email': 'both502@example.edu'},
+        ))
+        client.get('/auth/google/callback')  # login-intent match by email, links google
+        client.get('/logout')
+        client.get('/auth/oidc/callback')  # login-intent match by email, links oidc
+
+        conn = sqlite3.connect(isolated_paths['database_path'])
+        row = conn.execute("SELECT oauth_google_sub, oauth_oidc_sub FROM students WHERE roll_no='R502'").fetchone()
+        conn.close()
+        assert row[0] == 'google-sub-both'
+        assert row[1] == 'oidc-sub-both'
+
+    def test_configure_oauth_registers_only_ready_providers(self, isolated_paths, monkeypatch):
+        """Unit-level check on configure_oauth() itself: each provider
+        is independently gated on its own complete configuration."""
+        import app as app_module
+        monkeypatch.setattr(cfg, 'OAUTH_GOOGLE_ENABLED', False)
+        monkeypatch.setattr(cfg, 'OAUTH_OIDC_ENABLED', True)
+        monkeypatch.setattr(cfg, 'OAUTH_OIDC_CLIENT_ID', 'client-id')
+        monkeypatch.setattr(cfg, 'OAUTH_OIDC_CLIENT_SECRET', 'client-secret')
+        monkeypatch.setattr(cfg, 'OAUTH_OIDC_DISCOVERY_URL', 'https://example.com/.well-known/openid-configuration')
+
+        registry = app_module.configure_oauth(app_module.app)
+        assert registry is not None
+        assert hasattr(registry, 'oidc')
+        assert not hasattr(registry, 'google')
+
+    def test_configure_oauth_returns_none_when_incomplete(self, isolated_paths, monkeypatch):
+        import app as app_module
+        monkeypatch.setattr(cfg, 'OAUTH_GOOGLE_ENABLED', False)
+        monkeypatch.setattr(cfg, 'OAUTH_OIDC_ENABLED', True)
+        monkeypatch.setattr(cfg, 'OAUTH_OIDC_CLIENT_ID', '')  # missing
+        monkeypatch.setattr(cfg, 'OAUTH_OIDC_CLIENT_SECRET', 'client-secret')
+        monkeypatch.setattr(cfg, 'OAUTH_OIDC_DISCOVERY_URL', 'https://example.com/.well-known/openid-configuration')
+
+        registry = app_module.configure_oauth(app_module.app)
+        assert registry is None
     def test_link_requires_login_or_pending_registration(self, client, isolated_paths, monkeypatch):
         import app as app_module
         monkeypatch.setattr(app_module, 'oauth', FakeOAuth({'sub': 'irrelevant', 'email': 'irrelevant@example.edu'}))
