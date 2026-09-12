@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <h2 style="margin-top: 0;">Biometric Integration — Scaffolding (Beta)</h2>
+    <div class="flash warning" style="margin-bottom: 1.25rem;">
+        <span>
+            <strong>This is not a working biometric security feature.</strong> There is no certified iris-capture
+            hardware or vendor SDK integrated in this project. What's on this page is an interface/storage layer for
+            a <em>future</em> real integration — the one active "provider" is a non-biometric stand-in that derives a
+            deterministic value from whatever text you type below, purely to exercise the plumbing (storage,
+            comparison, the admin UI itself). It is never used for any real student's attendance-marking or login
+            security, and won't be until a real, independently-reviewed provider exists.
+        </span>
+    </div>
+
+    <div class="profile-details">
+        <div><strong>Enabled</strong>{{ 'Yes' if enabled else 'No (IRIS_AUTH_ENABLED)' }}</div>
+        <div><strong>Configured provider</strong>{{ provider_name }}</div>
+        <div><strong>Provider active</strong>{{ 'Yes' if provider_active else 'No — not a recognized/enabled provider' }}</div>
+        <div><strong>Test templates stored</strong>{{ enrolled_count }}</div>
+    </div>
+</div>
+
+{% if not provider_active %}
+<div class="card wide-card">
+    <p style="color: var(--muted);">
+        Set <code>IRIS_AUTH_ENABLED=1</code> and <code>IRIS_PROVIDER=mock</code> to try the diagnostic tools below
+        — see the README's "Biometric Integration (Scaffolding)" section.
+    </p>
+</div>
+{% else %}
+
+<div class="card wide-card">
+    <h3 style="margin-top: 0;">1. Compare two synthetic samples</h3>
+    <p style="color: var(--muted); font-size: 0.9rem;">
+        Type any two pieces of text standing in for "raw sensor samples" — this only tells you whether the mock
+        provider's comparison function runs correctly, not whether two eyes match.
+    </p>
+    <form method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="compare">
+        <label>Sample A</label>
+        <input type="text" name="sample_a" required>
+        <label>Sample B</label>
+        <input type="text" name="sample_b" required>
+        <button type="submit" class="button small">Compare</button>
+    </form>
+    {% if compare_result %}
+    <p style="margin-top: 1rem;">
+        Similarity score for "<strong>{{ compare_result.sample_a }}</strong>" vs
+        "<strong>{{ compare_result.sample_b }}</strong>": <strong>{{ compare_result.score }}</strong>
+        <span style="color: var(--muted);">(a plain vector-math score with no biometric meaning)</span>
+    </p>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <h3 style="margin-top: 0;">2. Enroll a synthetic test template for a student</h3>
+    <p style="color: var(--muted); font-size: 0.9rem;">
+        Stores a template derived from the text you enter, as if it came from a real capture device. Replaces
+        any existing test template for that student.
+    </p>
+    <form method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="enroll">
+        <label>Student</label>
+        <select name="student_id" required>
+            <option value="">Select a student…</option>
+            {% for s in students %}
+            <option value="{{ s.id }}">{{ s.name }} ({{ s.roll_no }})</option>
+            {% endfor %}
+        </select>
+        <label>Synthetic sample</label>
+        <input type="text" name="sample" required>
+        <button type="submit" class="button small">Enroll Test Template</button>
+    </form>
+    {% if enroll_result %}
+    <p style="margin-top: 1rem;">
+        Test template stored for <strong>{{ enroll_result.student.name }}</strong>
+        ({{ enroll_result.student.roll_no }}) at {{ enroll_result.enrolled_at }}.
+    </p>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <h3 style="margin-top: 0;">3. Compare a sample against a student's stored test template</h3>
+    <form method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="lookup_compare">
+        <label>Student</label>
+        <select name="lookup_student_id" required>
+            <option value="">Select a student…</option>
+            {% for s in students %}
+            <option value="{{ s.id }}">{{ s.name }} ({{ s.roll_no }})</option>
+            {% endfor %}
+        </select>
+        <label>Synthetic sample</label>
+        <input type="text" name="lookup_sample" required>
+        <button type="submit" class="button small">Compare</button>
+    </form>
+    {% if lookup_result %}
+    <p style="margin-top: 1rem;">
+        Similarity between "<strong>{{ lookup_result.sample }}</strong>" and
+        <strong>{{ lookup_result.student.name }}</strong>'s stored test template:
+        <strong>{{ lookup_result.score }}</strong>
+    </p>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

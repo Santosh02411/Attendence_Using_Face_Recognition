@@ -1,41 +1,46 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card login-card" id="loginFormCard" style="{% if logged_in %}display: none;{% endif %}">
-    <h2>Student Login</h2>
+    <h2>{{ _('Student Login') }}</h2>
     <form id="studentLoginForm">
-        <label>Roll Number</label>
-        <input id="roll_no" type="text" placeholder="Enter your roll number" required>
-        <label>Password</label>
-        <input id="password" type="password" placeholder="Enter your password" required>
+        <label>{{ _('Roll Number') }}</label>
+        <input id="roll_no" type="text" placeholder="{{ _('Enter your roll number') }}" required>
+        <label>{{ _('Password') }}</label>
+        <input id="password" type="password" placeholder="{{ _('Enter your password') }}" required>
         {% if config.get('CAPTCHA_ENABLED', True) %}
-        <label>Enter the code shown below</label>
+        <label>{{ _('Enter the code shown below') }}</label>
         <div class="captcha-row">
             <img src="{{ url_for('captcha_image') }}" alt="CAPTCHA" id="captchaImg" class="captcha-img">
-            <button type="button" class="button small" onclick="document.getElementById('captchaImg').src = '{{ url_for('captcha_image') }}?t=' + Date.now();">Refresh</button>
+            <button type="button" class="button small" onclick="document.getElementById('captchaImg').src = '{{ url_for('captcha_image') }}?t=' + Date.now();">{{ _('Refresh') }}</button>
         </div>
-        <input id="captcha" type="text" placeholder="Enter the code above" autocomplete="off" required>
+        <input id="captcha" type="text" placeholder="{{ _('Enter the code above') }}" autocomplete="off" required>
         {% endif %}
-        <button type="submit">Login</button>
+        <button type="submit">{{ _('Login') }}</button>
     </form>
     <div id="resultBox" class="result-box"></div>
     <div class="portal-switch">
-        <a href="{{ url_for('student_forgot_password') }}">Forgot password?</a>
+        <a href="{{ url_for('student_forgot_password') }}">{{ _('Forgot password?') }}</a>
     </div>
     {% if oauth_google_enabled %}
     <div class="portal-switch">
-        <a href="{{ url_for('google_oauth_login') }}" class="button small">Sign in with Google</a>
+        <a href="{{ url_for('google_oauth_login') }}" class="button small">{{ _('Sign in with Google') }}</a>
+    </div>
+    {% endif %}
+    {% if oauth_oidc_enabled %}
+    <div class="portal-switch">
+        <a href="{{ url_for('oidc_oauth_login') }}" class="button small">{{ _('Sign in with %(provider)s', provider=oidc_provider_name) }}</a>
     </div>
     {% endif %}
     <div class="portal-switch">
-        <span>Not registered? </span><a href="{{ url_for('student_register') }}">Register here</a>
+        <span>{{ _('Not registered?') }} </span><a href="{{ url_for('student_register') }}">{{ _('Register here') }}</a>
     </div>
 </div>
 
 <div id="sessionsContainer" style="{% if not logged_in %}display: none;{% endif %}">
     <div class="card wide-card">
-        <h2>Active Attendance Sessions</h2>
+        <h2>{{ _('Active Attendance Sessions') }}</h2>
         <p id="welcomeMsg" style="margin-bottom: 1.5rem; font-weight: 600; color: var(--primary);">
-            {% if logged_in %}Welcome back, {{ session.student_name }}!{% endif %}
+            {% if logged_in %}{{ _('Welcome back, %(name)s!', name=session.student_name) }}{% endif %}
         </p>
         <div id="sessionsList"></div>
     </div>

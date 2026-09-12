@@ -1,30 +1,30 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card wide-card">
-    <h2>Student Face Registration</h2>
+    <h2>{{ _('Student Face Registration') }}</h2>
     <div class="form-grid">
         <div class="form-panel">
-            <label>Name</label>
-            <input id="name" type="text" placeholder="Student Name" required>
-            <label>Roll No</label>
-            <input id="roll_no" type="text" placeholder="Roll No" required>
-            <label>Branch</label>
-            <input id="branch" type="text" placeholder="Branch" required>
-            <label>Semester</label>
-            <input id="semester" type="text" placeholder="Semester" required>
-            <label>Password</label>
-            <input id="password" type="password" placeholder="Set your password" required>
-            <label>Email (optional)</label>
-            <input id="email" type="email" placeholder="For password reset & notifications">
-            <label>Phone Number (optional)</label>
-            <input id="phone_number" type="tel" placeholder="For SMS notifications">
-            <label>Gender</label>
+            <label>{{ _('Name') }}</label>
+            <input id="name" type="text" placeholder="{{ _('Student Name') }}" required>
+            <label>{{ _('Roll No') }}</label>
+            <input id="roll_no" type="text" placeholder="{{ _('Roll No') }}" required>
+            <label>{{ _('Branch') }}</label>
+            <input id="branch" type="text" placeholder="{{ _('Branch') }}" required>
+            <label>{{ _('Semester') }}</label>
+            <input id="semester" type="text" placeholder="{{ _('Semester') }}" required>
+            <label>{{ _('Password') }}</label>
+            <input id="password" type="password" placeholder="{{ _('Set your password') }}" required>
+            <label>{{ _('Email (optional)') }}</label>
+            <input id="email" type="email" placeholder="{{ _('For password reset & notifications') }}">
+            <label>{{ _('Phone Number (optional)') }}</label>
+            <input id="phone_number" type="tel" placeholder="{{ _('For SMS notifications') }}">
+            <label>{{ _('Gender') }}</label>
             <select id="gender">
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
+                <option value="male">{{ _('Male') }}</option>
+                <option value="female">{{ _('Female') }}</option>
+                <option value="other">{{ _('Other') }}</option>
             </select>
-            <button id="registerButton" class="button">Register Student</button>
+            <button id="registerButton" class="button">{{ _('Register Student') }}</button>
         </div>
         <div class="form-panel video-panel">
             <div class="camera-frame">
@@ -34,13 +34,13 @@
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                         <circle cx="12" cy="13" r="4"></circle>
                     </svg>
-                    <span>Your camera preview will appear here</span>
+                    <span>{{ _('Your camera preview will appear here') }}</span>
                 </div>
             </div>
             <canvas id="captureCanvas" style="display:none"></canvas>
             <div class="capture-controls">
-                <div class="capture-count">Captured <span id="capturedCount">0</span>/5</div>
-                <button id="captureButton" class="button secondary" disabled>Capture Frame</button>
+                <div class="capture-count">{{ _('Captured') }} <span id="capturedCount">0</span>/5</div>
+                <button id="captureButton" class="button secondary" disabled>{{ _('Capture Frame') }}</button>
             </div>
         </div>
     </div>
@@ -168,13 +168,18 @@ function uploadImages() {
             if (stream) {
                 stream.getTracks().forEach(t => t.stop());
             }
-            {% if oauth_google_enabled %}
+            {% if oauth_google_enabled or oauth_oidc_enabled %}
             const resultBoxEl = document.getElementById('resultBox');
             resultBoxEl.classList.remove('success', 'error', 'warning');
             resultBoxEl.classList.add('success');
             resultBoxEl.innerHTML =
                 'SUCCESS! Student ID: ' + d.student_id + '. ' +
+                {% if oauth_google_enabled %}
                 '<a href="/auth/google/link" class="button small">Connect Google Account (optional)</a> ' +
+                {% endif %}
+                {% if oauth_oidc_enabled %}
+                '<a href="/auth/oidc/link" class="button small">Connect {{ oidc_provider_name }} (optional)</a> ' +
+                {% endif %}
                 'or it will redirect to login shortly.';
             setTimeout(function() {
                 window.location.href = '/student/login';

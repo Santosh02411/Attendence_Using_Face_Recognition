@@ -2,10 +2,8 @@
 {% block content %}
 <div class="landing-container">
     <div class="hero">
-        <h1>Attendance, verified by the person taking it</h1>
-        <p>Every session is signed by a live face match instead of a roll-call
-            sheet a classmate could answer for. Sign in below to run a
-            session, register a class, or mark yourself present.</p>
+        <h1>{{ _('Attendance, verified by the person taking it') }}</h1>
+        <p>{{ _('Every session is signed by a live face match instead of a roll-call sheet a classmate could answer for. Sign in below to run a session, register a class, or mark yourself present.') }}</p>
     </div>
 
     <div class="portal-grid">
@@ -16,9 +14,9 @@
                     <path d="m9 12 2 2 4-4"></path>
                 </svg>
             </span>
-            <h2>Admin portal</h2>
-            <p>Create sessions, register students, review reports, and keep an eye on the security dashboard.</p>
-            <a href="{{ url_for('login') }}" class="button">Admin sign in</a>
+            <h2>{{ _('Admin portal') }}</h2>
+            <p>{{ _('Create sessions, register students, review reports, and keep an eye on the security dashboard.') }}</p>
+            <a href="{{ url_for('login') }}" class="button">{{ _('Admin sign in') }}</a>
         </div>
 
         <div class="card portal-card student">
@@ -29,9 +27,9 @@
                     <path d="M8 7V5a4 4 0 0 1 8 0v2"></path>
                 </svg>
             </span>
-            <h2>Student portal</h2>
-            <p>Look into the camera to mark attendance for an active session, and track your record over the term.</p>
-            <a href="{{ url_for('student_login') }}" class="button secondary">Student sign in</a>
+            <h2>{{ _('Student portal') }}</h2>
+            <p>{{ _('Look into the camera to mark attendance for an active session, and track your record over the term.') }}</p>
+            <a href="{{ url_for('student_login') }}" class="button secondary">{{ _('Student sign in') }}</a>
         </div>
     </div>
 </div>

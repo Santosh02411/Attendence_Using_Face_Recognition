@@ -1,117 +1,123 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="page-header">
-    <h1>My Profile</h1>
-    <p>Account details and attendance summary for {{ student.name }}.</p>
+    <h1>{{ _('My Profile') }}</h1>
+    <p>{{ _('Account details and attendance summary for %(name)s.', name=student.name) }}</p>
 </div>
 
 <div class="dashboard-grid">
     <div class="card info-card">
-        <h3>Attendance</h3>
+        <h3>{{ _('Attendance') }}</h3>
         <p>{{ percentage }}%</p>
     </div>
     <div class="card info-card">
-        <h3>Sessions Attended</h3>
+        <h3>{{ _('Sessions Attended') }}</h3>
         <p>{{ total_sessions }}</p>
     </div>
     <div class="card info-card">
-        <h3>Registered Face Photos</h3>
+        <h3>{{ _('Registered Face Photos') }}</h3>
         <p>{{ embedding_count }}</p>
     </div>
 </div>
 
 <div class="card wide-card">
-    <h2>Account Details</h2>
+    <h2>{{ _('Account Details') }}</h2>
     <div class="profile-details">
-        <div><strong>Name</strong>{{ student.name }}</div>
-        <div><strong>Roll Number</strong>{{ student.roll_no }}</div>
-        <div><strong>Branch</strong>{{ student.branch }}</div>
-        <div><strong>Semester</strong>{{ student.semester }}</div>
-        <div><strong>Enrollment Status</strong>
+        <div><strong>{{ _('Name') }}</strong>{{ student.name }}</div>
+        <div><strong>{{ _('Roll Number') }}</strong>{{ student.roll_no }}</div>
+        <div><strong>{{ _('Branch') }}</strong>{{ student.branch }}</div>
+        <div><strong>{{ _('Semester') }}</strong>{{ student.semester }}</div>
+        <div><strong>{{ _('Enrollment Status') }}</strong>
             <span class="status-badge {{ 'status-present' if enrollment.status == 'complete' else ('status-late' if enrollment.status == 'pending' else 'status-absent') }}">
-                {{ {'complete': 'Complete', 'pending': 'Pending', 'not_enrolled': 'Not Enrolled'}[enrollment.status] }}
+                {{ {'complete': _('Complete'), 'pending': _('Pending'), 'not_enrolled': _('Not Enrolled')}[enrollment.status] }}
             </span>
         </div>
     </div>
-    <div class="meter" title="Attendance {{ percentage }}%">
+    <div class="meter" title="{{ _('Attendance %(pct)s%%', pct=percentage) }}">
         <div class="meter-fill {% if percentage < 50 %}danger{% elif percentage < 75 %}warning{% endif %}" style="width: {{ percentage }}%;"></div>
     </div>
     {% if total_sessions > 0 and percentage < low_attendance_threshold %}
     <div class="flash warning" style="margin-top: 0.75rem;">
-        Your attendance is {{ percentage }}%, below the {{ low_attendance_threshold }}% threshold. If you think this is wrong,
-        check your <a href="{{ url_for('student_history') }}">attendance history</a> — you can request a correction there.
+        {{ _('Your attendance is %(pct)s%%, below the %(threshold)s%% threshold. If you think this is wrong, check your attendance history — you can request a correction there.', pct=percentage, threshold=low_attendance_threshold) }}
+        <a href="{{ url_for('student_history') }}">{{ _('attendance history') }}</a>
     </div>
     {% endif %}
     <p style="color: var(--muted); font-size: 0.9rem;">
         {% if embedding_count == 0 %}
-        No face photos on record — face-based attendance marking won't
-        work until you add some.
-        <a href="{{ url_for('student_register_face') }}">Add your face photos now</a>.
+        {{ _("No face photos on record — face-based attendance marking won't work until you add some.") }}
+        <a href="{{ url_for('student_register_face') }}">{{ _('Add your face photos now') }}</a>.
         {% else %}
-        {{ embedding_count }} face photo{{ 's' if embedding_count != 1 }} on record
-        {% if enrollment.avg_quality is not none %}(average quality {{ enrollment.avg_quality }}/100){% endif %}.
-        <a href="{{ url_for('student_face_photos') }}">Manage my face photos</a>.
+        {{ _('%(count)s face photo(s) on record', count=embedding_count) }}
+        {% if enrollment.avg_quality is not none %}{{ _('(average quality %(quality)s/100)', quality=enrollment.avg_quality) }}{% endif %}.
+        <a href="{{ url_for('student_face_photos') }}">{{ _('Manage my face photos') }}</a>.
         {% endif %}
     </p>
     {% if enrollment.status == 'pending' %}
     <div class="flash warning" style="margin-top: 0.75rem;">
-        Your face enrollment quality is low{% if enrollment.photo_count < 3 %} and you have fewer than 3 photos on file{% endif %} —
-        attendance recognition may be less reliable for you. Consider
-        <a href="{{ url_for('student_register_face') }}">adding more photos</a>
-        or doing a full <form action="{{ url_for('reenroll_face') }}" method="POST" style="display: inline;" onsubmit="return confirm('This clears all your current face photos so you can start fresh. Continue?');">
+        {{ _('Your face enrollment quality is low') }}{% if enrollment.photo_count < 3 %} {{ _('and you have fewer than 3 photos on file') }}{% endif %} —
+        {{ _('attendance recognition may be less reliable for you. Consider') }}
+        <a href="{{ url_for('student_register_face') }}">{{ _('adding more photos') }}</a>
+        {{ _('or doing a full') }} <form action="{{ url_for('reenroll_face') }}" method="POST" style="display: inline;" onsubmit="return confirm('{{ _('This clears all your current face photos so you can start fresh. Continue?') }}');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" style="background: none; border: none; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit;">re-enrollment</button>
+            <button type="submit" style="background: none; border: none; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit;">{{ _('re-enrollment') }}</button>
         </form>.
     </div>
     {% endif %}
-    <a href="{{ url_for('student_history') }}" class="button small">View Full Attendance History</a>
+    <a href="{{ url_for('student_history') }}" class="button small">{{ _('View Full Attendance History') }}</a>
 </div>
 
 <div class="card wide-card">
-    <h2>Contact Info & Notifications</h2>
+    <h2>{{ _('Contact Info & Notifications') }}</h2>
     <p style="color: var(--muted); font-size: 0.9rem;">
-        Adding an email enables self-service password reset (if this
-        deployment supports it) and lets you receive attendance/low-
-        attendance notifications here, if enabled.
+        {{ _('Adding an email enables self-service password reset (if this deployment supports it) and lets you receive attendance/low-attendance notifications here, if enabled.') }}
     </p>
     <form method="post" action="{{ url_for('student_update_contact') }}" class="form-grid">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label>Email</label>
+        <label>{{ _('Email') }}</label>
         <input type="email" name="email" value="{{ student.email or '' }}" placeholder="you@example.edu">
-        <label>Phone Number</label>
+        <label>{{ _('Phone Number') }}</label>
         <input type="tel" name="phone_number" value="{{ student.phone_number or '' }}" placeholder="+1 555 123 4567">
         <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal;">
             <input type="checkbox" name="notify_email" style="width: auto;" {% if student.notify_email %}checked{% endif %}>
-            Email me when my attendance is marked or runs low
+            {{ _('Email me when my attendance is marked or runs low') }}
         </label>
         <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: normal;">
             <input type="checkbox" name="notify_sms" style="width: auto;" {% if student.notify_sms %}checked{% endif %}>
-            Text me when my attendance is marked or runs low
+            {{ _('Text me when my attendance is marked or runs low') }}
         </label>
-        <button type="submit" class="button">Save Contact Info</button>
+        <button type="submit" class="button">{{ _('Save Contact Info') }}</button>
     </form>
     {% if oauth_google_enabled %}
     <div style="margin-top: 1rem;">
         {% if student.oauth_google_sub %}
-            <span style="color: var(--muted);">✅ A Google account is connected for sign-in.</span>
+            <span style="color: var(--muted);">✅ {{ _('A Google account is connected for sign-in.') }}</span>
         {% else %}
-            <a href="{{ url_for('google_oauth_link') }}" class="button small">Connect Google Account</a>
+            <a href="{{ url_for('google_oauth_link') }}" class="button small">{{ _('Connect Google Account') }}</a>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if oauth_oidc_enabled %}
+    <div style="margin-top: 1rem;">
+        {% if student.oauth_oidc_sub %}
+            <span style="color: var(--muted);">✅ {{ _('A %(provider)s account is connected for sign-in.', provider=oidc_provider_name) }}</span>
+        {% else %}
+            <a href="{{ url_for('oidc_oauth_link') }}" class="button small">{{ _('Connect %(provider)s', provider=oidc_provider_name) }}</a>
         {% endif %}
     </div>
     {% endif %}
 </div>
 
 <div class="card wide-card">
-    <h2>Change My Password</h2>
+    <h2>{{ _('Change My Password') }}</h2>
     <form method="post" action="{{ url_for('student_change_password') }}" class="form-grid">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label>Current Password</label>
+        <label>{{ _('Current Password') }}</label>
         <input type="password" name="current_password" required>
-        <label>New Password</label>
+        <label>{{ _('New Password') }}</label>
         <input type="password" name="new_password" required>
-        <label>Confirm New Password</label>
+        <label>{{ _('Confirm New Password') }}</label>
         <input type="password" name="confirm_password" required>
-        <button type="submit" class="button">Update Password</button>
+        <button type="submit" class="button">{{ _('Update Password') }}</button>
     </form>
 </div>
 {% endblock %}

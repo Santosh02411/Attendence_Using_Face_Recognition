@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ get_locale() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Face Recognition Attendance</title>
+    <title>{{ _('Face Recognition Attendance') }}</title>
     <!-- Source Serif 4 (headings/brand), IBM Plex Sans (UI/body), IBM Plex Mono (numeric readouts) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,36 +29,45 @@
                     <circle cx="12" cy="12" r="3"></circle>
                 </svg>
             </span>
-            Face Attendance
+            {{ _('Face Attendance') }}
         </div>
         <div class="nav-row">
             <nav class="nav-links">
             {% if session.user_type == 'admin' %}
-            <a href="{{ url_for('admin_dashboard') }}">Admin Dashboard</a>
-            <a href="{{ url_for('admin_sessions') }}">Manage Sessions</a>
-            <a href="{{ url_for('admin_students') }}">Manage Students</a>
-            <a href="{{ url_for('admin_reports') }}">Reports</a>
-            <a href="{{ url_for('admin_corrections') }}">Corrections</a>
-            <a href="{{ url_for('recognition_settings') }}">Recognition</a>
-            <a href="{{ url_for('security_dashboard') }}">Security</a>
-            <a href="{{ url_for('student_register') }}">Register Student</a>
-            <a href="{{ url_for('admin_settings') }}">Settings</a>
-            <a href="{{ url_for('audit_log_view') }}">Audit Log</a>
-            <a href="{{ url_for('logout') }}">Logout</a>
+            <a href="{{ url_for('admin_dashboard') }}">{{ _('Admin Dashboard') }}</a>
+            <a href="{{ url_for('admin_sessions') }}">{{ _('Manage Sessions') }}</a>
+            <a href="{{ url_for('admin_students') }}">{{ _('Manage Students') }}</a>
+            <a href="{{ url_for('admin_reports') }}">{{ _('Reports') }}</a>
+            <a href="{{ url_for('admin_analytics') }}">{{ _('Analytics') }}</a>
+            <a href="{{ url_for('admin_corrections') }}">{{ _('Corrections') }}</a>
+            <a href="{{ url_for('recognition_settings') }}">{{ _('Recognition') }}</a>
+            <a href="{{ url_for('biometric_diagnostics') }}">{{ _('Biometric (Beta)') }}</a>
+            <a href="{{ url_for('security_dashboard') }}">{{ _('Security') }}</a>
+            <a href="{{ url_for('student_register') }}">{{ _('Register Student') }}</a>
+            <a href="{{ url_for('admin_settings') }}">{{ _('Settings') }}</a>
+            <a href="{{ url_for('audit_log_view') }}">{{ _('Audit Log') }}</a>
+            <a href="{{ url_for('logout') }}">{{ _('Logout') }}</a>
             {% elif session.user_type == 'student' %}
-            <a href="{{ url_for('student_login') }}">Attendance</a>
-            <a href="{{ url_for('student_profile') }}">My Profile</a>
-            <a href="{{ url_for('student_history') }}">My History</a>
-            <a href="{{ url_for('logout') }}">Logout</a>
+            <a href="{{ url_for('student_login') }}">{{ _('Attendance') }}</a>
+            <a href="{{ url_for('student_profile') }}">{{ _('My Profile') }}</a>
+            <a href="{{ url_for('student_history') }}">{{ _('My History') }}</a>
+            <a href="{{ url_for('logout') }}">{{ _('Logout') }}</a>
             {% else %}
-            <a href="{{ url_for('home') }}">Home</a>
-            <a href="{{ url_for('login') }}">Admin Login</a>
-            <a href="{{ url_for('student_login') }}">Student Login</a>
-            <a href="{{ url_for('student_register') }}">Student Registration</a>
+            <a href="{{ url_for('home') }}">{{ _('Home') }}</a>
+            <a href="{{ url_for('login') }}">{{ _('Admin Login') }}</a>
+            <a href="{{ url_for('student_login') }}">{{ _('Student Login') }}</a>
+            <a href="{{ url_for('student_register') }}">{{ _('Student Registration') }}</a>
             {% endif %}
             </nav>
 
-            <button class="theme-toggle" id="theme-toggle" aria-label="Toggle Dark Mode">
+            <select class="lang-switcher" aria-label="{{ _('Language') }}" onchange="if(this.value) window.location.href=this.value;">
+                <option value="">{{ _('Language') }}: {{ config.LANGUAGES[get_locale()] }}</option>
+                {% for code, name in config.LANGUAGES.items() %}
+                <option value="{{ url_for('set_language', lang_code=code) }}" {% if code == get_locale() %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+
+            <button class="theme-toggle" id="theme-toggle" aria-label="{{ _('Toggle Dark Mode') }}">
                 <svg id="theme-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                     <!-- Icon will be set by JS -->
                 </svg>
