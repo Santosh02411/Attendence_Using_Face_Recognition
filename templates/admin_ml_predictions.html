@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card wide-card">
+    <h2 style="margin-top: 0;">AI-Powered Attendance Predictions (Beta)</h2>
+    <div class="flash warning" style="margin-bottom: 1.25rem;">
+        <span>
+            <strong>A genuinely trained model, with real limits.</strong> This is trained only on this
+            deployment's own historical attendance data — there is no external dataset or pre-trained model
+            behind it. Its accuracy (shown below, whenever there was enough data to measure it honestly) is the
+            only evidence it works. Treat every prediction as a supplementary signal to weigh, never as an
+            automated decision — for a fully transparent, example-by-example alternative, see
+            <a href="{{ url_for('admin_analytics') }}">Deeper Analytics</a>' rule-based risk-trend view.
+        </span>
+    </div>
+
+    <div class="profile-details">
+        <div><strong>Students</strong>{{ student_count }}</div>
+        <div><strong>Sessions</strong>{{ session_count }}</div>
+        <div><strong>Minimum examples to train</strong>{{ min_training_examples }}</div>
+        {% if model_state %}
+        <div><strong>Last trained</strong>{{ model_state.trained_at }}</div>
+        {% endif %}
+    </div>
+
+    <form method="post" action="{{ url_for('ml_predictions_train') }}" style="margin-top: 1rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="button">{{ 'Re-train Model' if model_state else 'Train Model' }}</button>
+    </form>
+</div>
+
+{% if not model_state %}
+<div class="card wide-card">
+    <p style="color: var(--muted);">
+        No model has been trained yet. Training builds one example per student per point in their history where
+        enough sessions came both before and after it — a brand-new deployment, or one with only a few sessions
+        so far, may not have {{ min_training_examples }} such examples yet. Click "Train Model" above to check;
+        it will explain exactly how many examples are available if it isn't enough yet.
+    </p>
+</div>
+{% else %}
+<div class="card wide-card">
+    <h3 style="margin-top: 0;">Model Quality</h3>
+    {% if model_state.validated and model_state.metrics %}
+    <div class="profile-details">
+        <div><strong>Held-out accuracy</strong>{{ model_state.metrics.accuracy }}</div>
+        <div><strong>Precision</strong>{{ model_state.metrics.precision }}</div>
+        <div><strong>Recall</strong>{{ model_state.metrics.recall }}</div>
+        <div><strong>F1</strong>{{ model_state.metrics.f1 }}</div>
+        <div><strong>Trained on</strong>{{ model_state.n_examples }} examples</div>
+    </div>
+    <p style="color: var(--muted); font-size: 0.9rem;">
+        Measured on a held-out 20% of examples this model never trained on. With
+        {{ model_state.n_examples }} total examples, treat these numbers as a rough signal, not a
+        guarantee — the smaller the sample, the more these can shift on the next re-training.
+    </p>
+    {% else %}
+    <div class="flash error">
+        Trained on only {{ model_state.n_examples }} example(s) — too few to hold out a separate test set, so
+        there is <strong>no accuracy estimate for this model at all</strong>. Predictions below should be treated
+        as unvalidated until more history accumulates and it can be re-trained with enough examples to measure.
+    </div>
+    {% endif %}
+</div>
+
+<div class="card wide-card">
+    <h3 style="margin-top: 0;">Predicted Risk</h3>
+    <p style="color: var(--muted); font-size: 0.9rem;">
+        Estimated probability that each student's attendance over their next several sessions will fall below
+        the low-attendance threshold, given their history so far. Students with too little history for a
+        prediction are omitted.
+    </p>
+    {% if predictions %}
+    <div class="table-container" style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Roll No</th>
+                    <th>Name</th>
+                    <th>Branch / Sem</th>
+                    <th>Predicted Risk</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in predictions %}
+                <tr>
+                    <td>{{ p.roll_no }}</td>
+                    <td>{{ p.name }}</td>
+                    <td>{{ p.branch }} / {{ p.semester }}</td>
+                    <td>
+                        <div class="meter" title="{{ (p.risk_probability * 100) | round(1) }}%" style="max-width: 160px;">
+                            <div class="meter-fill {% if p.risk_probability > 0.66 %}danger{% elif p.risk_probability > 0.33 %}warning{% endif %}" style="width: {{ (p.risk_probability * 100) | round(1) }}%;"></div>
+                        </div>
+                        {{ (p.risk_probability * 100) | round(1) }}%
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No students currently have enough history for a prediction.</p>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
