@@ -9,7 +9,7 @@ ruff>=0.6
 # Pinned below 2.0: mypy 2.x dropped support for `python_version = "3.9"`
 # (our pyproject.toml target, matching the README's stated minimum/the CI
 # test matrix's low end) — it now requires 3.10+ as the simulated target.
-mypy>=1.10,<2.0
+mypy>=2.3.1,<3.0
 
 # Dependency vulnerability scanning (see .github/workflows/ci.yml "security" job).
 # Checks installed packages against the PyPA Advisory Database.
