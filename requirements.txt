@@ -12,7 +12,7 @@ alembic>=1.13,<2.0
 # resolves to 5.x on a fresh install and breaks face recognition (and the
 # embedding tests) at runtime with no code change on our side. Revisit this
 # pin if/when the embedder is ported to an ONNX equivalent.
-opencv-contrib-python>=4.13.0,<5.0
+opencv-contrib-python>=4.14.0.94,<5.0
 numpy>=1.24
 # Floor raised to the release that closes the known PYSEC advisories
 # current as of this writing (heap-overflow/DoS issues in image decoding
