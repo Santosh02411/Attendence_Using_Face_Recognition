@@ -14,3 +14,12 @@ mypy>=1.10,<2.0
 # Dependency vulnerability scanning (see .github/workflows/ci.yml "security" job).
 # Checks installed packages against the PyPA Advisory Database.
 pip-audit>=2.7
+
+# Browser-driven E2E tests (see tests_e2e/ and README's "Browser/E2E Tests")
+# — a real Chromium browser exercising the actual camera/JS pipeline,
+# rather than the mocked detection the rest of the suite uses. Not part
+# of the default `pytest` run (see pytest.ini's testpaths=tests); after
+# installing this, also run `playwright install chromium` once to
+# download the browser binary itself (not a Python package, so pip
+# alone doesn't fetch it).
+playwright>=1.45

@@ -830,3 +830,63 @@ ADMIN_PASSWORD_RESET_ENABLED = os.environ.get('ADMIN_PASSWORD_RESET_ENABLED', '0
 ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES = _env_int('ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES', 15)
 # ENV_VAR: RATE_LIMIT_ADMIN_PASSWORD_RESET
 RATE_LIMIT_ADMIN_PASSWORD_RESET = os.environ.get('RATE_LIMIT_ADMIN_PASSWORD_RESET', '3 per hour')
+
+# --- SSO / Institutional Login (generic OIDC, beyond Google) ---------------
+# Covers institutions using Okta, Azure AD / Entra ID, Keycloak, Auth0,
+# or any other standards-compliant OpenID Connect provider — without
+# adding a heavier SAML dependency. Same opt-in, safe-no-op pattern as
+# Google above, and can be enabled independently of (or alongside)
+# Google — see configure_oauth() in app.py, which registers whichever
+# of the two are actually configured.
+# ENV_VAR: OAUTH_OIDC_ENABLED
+OAUTH_OIDC_ENABLED = os.environ.get('OAUTH_OIDC_ENABLED', '0') == '1'
+# ENV_VAR: OAUTH_OIDC_CLIENT_ID
+OAUTH_OIDC_CLIENT_ID = os.environ.get('OAUTH_OIDC_CLIENT_ID', '')
+# ENV_VAR: OAUTH_OIDC_CLIENT_SECRET
+OAUTH_OIDC_CLIENT_SECRET = os.environ.get('OAUTH_OIDC_CLIENT_SECRET', '')  # nosec B105 -- env var name, not a secret value
+# ENV_VAR: OAUTH_OIDC_DISCOVERY_URL
+# The provider's OpenID Connect discovery document, e.g.
+# https://your-tenant.okta.com/.well-known/openid-configuration or
+# https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration
+OAUTH_OIDC_DISCOVERY_URL = os.environ.get('OAUTH_OIDC_DISCOVERY_URL', '')
+# ENV_VAR: OAUTH_OIDC_PROVIDER_NAME
+# Display name shown on the "Sign in with ..." button and in
+# flash/log messages — purely cosmetic, doesn't affect the protocol.
+OAUTH_OIDC_PROVIDER_NAME = os.environ.get('OAUTH_OIDC_PROVIDER_NAME', 'Institution SSO')
+
+# --- Multi-language UI support (i18n) ---------------------------------------
+# Flask-Babel-based. Scope is deliberately honest rather than total: the
+# highest-traffic templates (navigation, home page, both login forms,
+# registration, and the student profile page) are translated; JS-driven
+# status/error messages and the admin back-office templates remain
+# English-only in this iteration — see README's "Multi-Language Support"
+# for the exact boundary and how to extend it.
+# ENV_VAR: LANGUAGES (not settable via env — the supported set is a code
+# decision, not a deployment one; which one is ACTIVE per-request is
+# controlled by BABEL_DEFAULT_LOCALE plus the session/browser language,
+# see get_locale() in app.py)
+LANGUAGES = {
+    'en': 'English',
+    'es': 'Español',
+    'hi': 'हिन्दी',
+}
+# ENV_VAR: BABEL_DEFAULT_LOCALE
+BABEL_DEFAULT_LOCALE = os.environ.get('BABEL_DEFAULT_LOCALE', 'en')
+
+# --- Biometric integration (SCAFFOLDING ONLY — see biometric.py) -----------
+# This is an interface/storage layer for a FUTURE biometric integration,
+# not a working security feature. There is no certified iris-capture
+# hardware or vendor SDK wired up here — see biometric.py's module
+# docstring before enabling this or treating it as adding any real
+# security. The only implemented provider ('mock') is explicitly NOT a
+# biometric matcher; it exists to exercise the storage/comparison
+# plumbing in tests and the admin diagnostic page
+# (/admin/biometric-diagnostics), nothing more. Off by default.
+# ENV_VAR: IRIS_AUTH_ENABLED
+IRIS_AUTH_ENABLED = os.environ.get('IRIS_AUTH_ENABLED', '0') == '1'
+# ENV_VAR: IRIS_PROVIDER
+# 'mock' is the only value that currently does anything (see
+# biometric.get_iris_provider()) — any other value, including a real
+# vendor name set in anticipation of a future driver, resolves to no
+# provider at all rather than silently pretending to work.
+IRIS_PROVIDER = os.environ.get('IRIS_PROVIDER', 'mock')

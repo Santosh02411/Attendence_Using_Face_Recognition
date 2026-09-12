@@ -29,3 +29,7 @@ Authlib>=1.3
 # dependency of several packages already, but listed explicitly since
 # notifications.py imports it directly.
 requests>=2.31
+# Multi-language UI support (see config.py's LANGUAGES/BABEL_DEFAULT_LOCALE
+# and README's "Multi-Language Support"). Lightweight, standard choice for
+# Flask i18n.
+Flask-Babel>=4.0

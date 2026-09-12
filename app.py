@@ -17,6 +17,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Union
+from urllib.parse import urlparse
 
 import cv2
 import numpy as np
@@ -34,6 +35,7 @@ from flask import (
     session,
     url_for,
 )
+from flask_babel import Babel
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
@@ -42,6 +44,8 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import analytics
+import biometric
 import config as cfg
 import db_migrations
 import error_reporting
@@ -144,44 +148,135 @@ app.config['CAPTCHA_ENABLED'] = cfg.CAPTCHA_ENABLED
 csrf = CSRFProtect(app)
 
 
-def configure_oauth(flask_app):
-    """Registers the Google OAuth client if SSO is configured, following
-    the same lazy-import, safe-no-op pattern as
-    error_reporting.init_sentry(): a deployment that hasn't set
-    OAUTH_GOOGLE_ENABLED (or is missing either client credential) gets
-    None back and /auth/google/login just tells the user SSO isn't
-    configured, rather than the app failing to start. authlib is a
-    lightweight, pure-Python dependency (see requirements.txt) so it's
-    always installed, but the credentials/flag are what's actually
-    opt-in here.
+# --- Multi-language UI support (i18n) ---------------------------------------
+# See config.py's LANGUAGES/BABEL_DEFAULT_LOCALE and the README's
+# "Multi-Language Support" section for the exact scope (which templates
+# are translated) and reasoning.
+app.config['LANGUAGES'] = cfg.LANGUAGES
+app.config['BABEL_DEFAULT_LOCALE'] = cfg.BABEL_DEFAULT_LOCALE
+app.config['BABEL_TRANSLATION_DIRECTORIES'] = os.path.join(cfg.BASE_DIR, 'translations')
+
+
+def get_locale():
+    """Resolves which language to render in, in priority order:
+    1. An explicit choice made this session via /set-language/<code>
+       (see that route below) — persists for the rest of the session.
+    2. The browser's Accept-Language header, matched against the
+       languages we actually support.
+    3. BABEL_DEFAULT_LOCALE.
+    A stored/requested code that isn't in LANGUAGES is never trusted
+    (falls through to the next step) — this only ever selects among
+    the fixed, developer-chosen set, never an arbitrary value.
+
+    Also exposed directly as a Jinja global (see app.jinja_env.globals
+    below) so templates can call get_locale() to highlight the active
+    language in the switcher — Flask-Babel's own get_locale() returns a
+    babel.Locale object rather than the plain code string used as
+    LANGUAGES' keys, so this project's own selector doubles as that
+    template helper rather than adding a second, differently-shaped one.
     """
-    if not cfg.OAUTH_GOOGLE_ENABLED:
-        logger.info('OAUTH_GOOGLE_ENABLED is off — Google SSO is disabled.')
-        return None
-    if not cfg.OAUTH_GOOGLE_CLIENT_ID or not cfg.OAUTH_GOOGLE_CLIENT_SECRET:
+    stored = session.get('locale')
+    if stored in cfg.LANGUAGES:
+        return stored
+    return request.accept_languages.best_match(cfg.LANGUAGES.keys()) or cfg.BABEL_DEFAULT_LOCALE
+
+
+babel = Babel(app, locale_selector=get_locale)
+app.jinja_env.globals['get_locale'] = get_locale
+
+
+@app.route('/set-language/<lang_code>')
+def set_language(lang_code):
+    """Persists an explicit language choice for the rest of the
+    session (see get_locale() above) and returns to wherever the
+    person was — never to an off-site URL, even if Referer claims to
+    be one, since Referer is client-supplied."""
+    if lang_code in cfg.LANGUAGES:
+        session['locale'] = lang_code
+    referrer = request.referrer
+    if referrer:
+        parsed = urlparse(referrer)
+        if not parsed.netloc or parsed.netloc == request.host:
+            return redirect(referrer)
+    return redirect(url_for('home'))
+
+
+def configure_oauth(flask_app):
+    """Registers whichever SSO provider(s) are configured — Google
+    and/or generic OIDC — following the same lazy-import, safe-no-op
+    pattern as error_reporting.init_sentry(): a deployment with neither
+    configured gets None back and every /auth/* route just tells the
+    user SSO isn't configured, rather than the app failing to start.
+    authlib is a lightweight, pure-Python dependency (see
+    requirements.txt) so it's always installed, but the credentials/
+    flags are what's actually opt-in here. Returns the shared Authlib
+    OAuth registry (with 'google' and/or 'oidc' clients registered on
+    it) or None if nothing is configured/installed.
+    """
+    google_ready = bool(cfg.OAUTH_GOOGLE_ENABLED and cfg.OAUTH_GOOGLE_CLIENT_ID and cfg.OAUTH_GOOGLE_CLIENT_SECRET)
+    if cfg.OAUTH_GOOGLE_ENABLED and not google_ready:
         logger.warning('OAUTH_GOOGLE_ENABLED is set but OAUTH_GOOGLE_CLIENT_ID/'
                         'OAUTH_GOOGLE_CLIENT_SECRET are missing — Google SSO stays disabled.')
+
+    oidc_ready = bool(cfg.OAUTH_OIDC_ENABLED and cfg.OAUTH_OIDC_CLIENT_ID
+                       and cfg.OAUTH_OIDC_CLIENT_SECRET and cfg.OAUTH_OIDC_DISCOVERY_URL)
+    if cfg.OAUTH_OIDC_ENABLED and not oidc_ready:
+        logger.warning('OAUTH_OIDC_ENABLED is set but OAUTH_OIDC_CLIENT_ID/OAUTH_OIDC_CLIENT_SECRET/'
+                        'OAUTH_OIDC_DISCOVERY_URL are incomplete — generic OIDC SSO stays disabled.')
+
+    if not google_ready and not oidc_ready:
+        logger.info('No SSO provider is enabled/configured — Google and generic-OIDC SSO are both disabled.')
         return None
+
     try:
         from authlib.integrations.flask_client import OAuth
     except ImportError:
-        logger.warning('OAUTH_GOOGLE_ENABLED is set but the authlib package is not installed. '
-                        'Install it (see requirements.txt) to enable Google SSO. Continuing without it.')
+        logger.warning('An SSO provider is enabled but the authlib package is not installed. '
+                        'Install it (see requirements.txt) to enable SSO. Continuing without it.')
         return None
 
     oauth_registry = OAuth(flask_app)
-    oauth_registry.register(
-        name='google',
-        client_id=cfg.OAUTH_GOOGLE_CLIENT_ID,
-        client_secret=cfg.OAUTH_GOOGLE_CLIENT_SECRET,
-        server_metadata_url=cfg.OAUTH_GOOGLE_DISCOVERY_URL,
-        client_kwargs={'scope': 'openid email profile'},
-    )
-    logger.info('Google SSO enabled.')
+    if google_ready:
+        oauth_registry.register(
+            name='google',
+            client_id=cfg.OAUTH_GOOGLE_CLIENT_ID,
+            client_secret=cfg.OAUTH_GOOGLE_CLIENT_SECRET,
+            server_metadata_url=cfg.OAUTH_GOOGLE_DISCOVERY_URL,
+            client_kwargs={'scope': 'openid email profile'},
+        )
+        logger.info('Google SSO enabled.')
+    if oidc_ready:
+        oauth_registry.register(
+            name='oidc',
+            client_id=cfg.OAUTH_OIDC_CLIENT_ID,
+            client_secret=cfg.OAUTH_OIDC_CLIENT_SECRET,
+            server_metadata_url=cfg.OAUTH_OIDC_DISCOVERY_URL,
+            client_kwargs={'scope': 'openid email profile'},
+        )
+        logger.info(f'Generic OIDC SSO enabled ({cfg.OAUTH_OIDC_PROVIDER_NAME}).')
     return oauth_registry
 
 
 oauth = configure_oauth(app)
+
+
+_OAUTH_PROVIDER_SUB_COLUMN = {'google': 'oauth_google_sub', 'oidc': 'oauth_oidc_sub'}
+
+
+def _oauth_client(provider):
+    """Returns the Authlib client for `provider` ('google' or 'oidc'),
+    or None if SSO overall — or that specific provider — isn't
+    configured. Every /auth/* route below goes through this rather
+    than touching the module-level `oauth` object directly, so a
+    deployment with only one of the two providers configured degrades
+    per-provider rather than all-or-nothing."""
+    if not oauth:
+        return None
+    return getattr(oauth, provider, None)
+
+
+def _oauth_display_name(provider):
+    return 'Google' if provider == 'google' else cfg.OAUTH_OIDC_PROVIDER_NAME
 
 # Per-IP rate limiting on top of (not instead of) the per-account lockout
 # below: rate limiting throttles a single IP regardless of which account
@@ -1089,6 +1184,7 @@ def _compute_attendance_report(subject_id=None, start_date=None, end_date=None, 
             'student_id': student['id'],
             'name': student['name'],
             'roll_no': student['roll_no'],
+            'branch': student['branch'],
             'semester': student['semester'],
             'total_sessions': total_sessions,
             'present': present_count,
@@ -1119,6 +1215,39 @@ def _compute_attendance_report(subject_id=None, start_date=None, end_date=None, 
         for k, v in sorted(buckets.items())
     ]
     return report_rows, trend
+
+
+def _ordered_sessions_and_status(start_date=None, end_date=None):
+    """Shared by the analytics (cohort/risk-prediction) routes: every
+    session with a parseable date, sorted chronologically, optionally
+    restricted to a date range, plus a {(session_id, student_id):
+    status} lookup covering all of them. Mirrors the session-filtering
+    half of _compute_attendance_report() above, factored out since the
+    analytics routes need the sessions themselves in date order (for a
+    per-student chronological outcome sequence) rather than just a
+    flat total."""
+    all_sessions = query_db('SELECT * FROM sessions')
+    sessions = []
+    for s in all_sessions:
+        parsed_date = _parse_session_date(s['date'])
+        if parsed_date is None:
+            continue
+        if start_date and parsed_date < start_date:
+            continue
+        if end_date and parsed_date > end_date:
+            continue
+        row = dict(s)
+        row['parsed_date'] = parsed_date
+        sessions.append(row)
+    sessions.sort(key=lambda s: (s['parsed_date'], s.get('time') or ''))
+
+    if not sessions:
+        return [], {}
+    session_ids = [s['id'] for s in sessions]
+    placeholders = ','.join('?' for _ in session_ids)
+    attendance_rows = query_db(f'SELECT student_id, session_id, status FROM attendance WHERE session_id IN ({placeholders})', tuple(session_ids))  # nosec B608
+    status_by_pair = {(r['session_id'], r['student_id']): r['status'] for r in attendance_rows}
+    return sessions, status_by_pair
 
 
 def generate_captcha_text():
@@ -1983,6 +2112,8 @@ def restrict_access():
         'student_forgot_password', 'student_reset_password',
         'admin_forgot_password', 'admin_reset_password',
         'google_oauth_login', 'google_oauth_link', 'google_oauth_callback',
+        'oidc_oauth_login', 'oidc_oauth_link', 'oidc_oauth_callback',
+        'set_language',
     ]
     if request.endpoint in allowed_routes or not request.endpoint:
         return
@@ -2531,6 +2662,89 @@ def recognition_settings():
                                 'EMBEDDING_INPUT_SIZE': cfg.EMBEDDING_INPUT_SIZE,
                                 'MATCH_TOP_K': cfg.MATCH_TOP_K,
                             })
+
+
+@app.route('/admin/biometric-diagnostics', methods=['GET', 'POST'])
+def biometric_diagnostics():
+    """Admin-only diagnostic page for the iris-authentication
+    SCAFFOLDING in biometric.py — read that module's docstring before
+    assuming this page means working biometric security. It exercises
+    the enroll/store/compare plumbing with synthetic text inputs
+    standing in for what a real capture device would produce; it never
+    touches real students' attendance-marking or login security, and
+    won't until a real, independently-reviewed provider exists.
+    """
+    if not session.get('admin_user'):
+        return redirect(url_for('login'))
+
+    provider = biometric.get_iris_provider(cfg.IRIS_PROVIDER, cfg.IRIS_AUTH_ENABLED)
+    compare_result = None
+    enroll_result = None
+    lookup_result = None
+
+    if request.method == 'POST' and provider:
+        action = request.form.get('action')
+
+        if action == 'compare':
+            sample_a = request.form.get('sample_a', '')
+            sample_b = request.form.get('sample_b', '')
+            template_a = provider.capture_template(sample_a.encode('utf-8'))
+            template_b = provider.capture_template(sample_b.encode('utf-8'))
+            compare_result = {
+                'sample_a': sample_a, 'sample_b': sample_b,
+                'score': round(provider.compare(template_a, template_b), 4),
+            }
+
+        elif action == 'enroll':
+            student_id = request.form.get('student_id', '')
+            sample = request.form.get('sample', '')
+            student = query_db('SELECT * FROM students WHERE id=?', (student_id,), one=True)
+            if not student:
+                flash('Student not found.', 'error')
+            else:
+                template = provider.capture_template(sample.encode('utf-8'))
+                blob = biometric.serialize_template(template)
+                now = datetime.now().isoformat()
+                execute_db(
+                    'INSERT INTO iris_templates(student_id, template, provider_name, enrolled_at) VALUES (?, ?, ?, ?) '
+                    'ON CONFLICT(student_id) DO UPDATE SET template=excluded.template, provider_name=excluded.provider_name, enrolled_at=excluded.enrolled_at',
+                    (student['id'], blob, provider.name, now)
+                )
+                log_audit('admin', session.get('admin_user'), 'biometric_test_template_enrolled',
+                          target=student['roll_no'], details='synthetic test data, not a real biometric sample')
+                enroll_result = {'student': student, 'enrolled_at': now}
+
+        elif action == 'lookup_compare':
+            student_id = request.form.get('lookup_student_id', '')
+            sample = request.form.get('lookup_sample', '')
+            student = query_db('SELECT * FROM students WHERE id=?', (student_id,), one=True)
+            stored = query_db('SELECT * FROM iris_templates WHERE student_id=?', (student_id,), one=True)
+            if not student:
+                flash('Student not found.', 'error')
+            elif not stored:
+                flash(f'No test template enrolled yet for {student["roll_no"]}.', 'error')
+            else:
+                stored_template = biometric.deserialize_template(stored['template'])
+                sample_template = provider.capture_template(sample.encode('utf-8'))
+                lookup_result = {
+                    'student': student, 'sample': sample,
+                    'score': round(provider.compare(stored_template, sample_template), 4),
+                }
+
+    enrolled_count = query_db('SELECT COUNT(*) as c FROM iris_templates', one=True)['c']
+    students = query_db('SELECT id, name, roll_no FROM students ORDER BY name')
+
+    return render_template(
+        'admin_biometric_diagnostics.html',
+        enabled=cfg.IRIS_AUTH_ENABLED,
+        provider_name=cfg.IRIS_PROVIDER,
+        provider_active=bool(provider),
+        enrolled_count=enrolled_count,
+        students=students,
+        compare_result=compare_result,
+        enroll_result=enroll_result,
+        lookup_result=lookup_result,
+    )
 
 
 @app.route('/admin/recognition-settings/<key>/reset', methods=['POST'])
@@ -3542,7 +3756,12 @@ def student_register():
         if skip_reasons:
             response['warning'] = f'{len(skip_reasons)} of {len(images)} photos were skipped ({", ".join(sorted(set(skip_reasons)))}); {saved} were used.'
         return jsonify(response)
-    return render_template('student_register.html', oauth_google_enabled=bool(oauth))
+    return render_template(
+        'student_register.html',
+        oauth_google_enabled=bool(_oauth_client('google')),
+        oauth_oidc_enabled=bool(_oauth_client('oidc')),
+        oidc_provider_name=cfg.OAUTH_OIDC_PROVIDER_NAME,
+    )
 
 
 @app.route('/student/login', methods=['GET', 'POST'])
@@ -3588,7 +3807,12 @@ def student_login():
         student_data.pop('password', None)  # never send the password hash to the client
         return jsonify({'status': 'ok', 'student': student_data})
 
-    return render_template('student_login.html', logged_in=False, oauth_google_enabled=bool(oauth))
+    return render_template(
+        'student_login.html', logged_in=False,
+        oauth_google_enabled=bool(_oauth_client('google')),
+        oauth_oidc_enabled=bool(_oauth_client('oidc')),
+        oidc_provider_name=cfg.OAUTH_OIDC_PROVIDER_NAME,
+    )
 
 
 def _establish_student_session(student, roll_no, fingerprint_hash, login_event):
@@ -3715,27 +3939,28 @@ def student_reset_password(token):
     return render_template('student_reset_password.html', token=token)
 
 
-@app.route('/auth/google/login')
-def google_oauth_login():
-    """Starts the Google OAuth 2.0 / OIDC flow for student SSO (see
-    README's "SSO / Institutional Login" section). A no-op redirect back
-    to the login page with a flash message if SSO isn't configured,
-    rather than a 500 — same "friendly degrade" philosophy as the rest
-    of this project's optional integrations."""
-    if not oauth:
-        flash('Sign-in with Google is not configured for this deployment.', 'error')
+def _oauth_start(provider, callback_endpoint):
+    """Shared body of google_oauth_login()/oidc_oauth_login(): begins
+    an OAuth redirect with a LOGIN intent for `provider`. A no-op
+    redirect back to the login page with a flash message if that
+    provider isn't configured, rather than a 500 — same "friendly
+    degrade" philosophy as the rest of this project's optional
+    integrations."""
+    client = _oauth_client(provider)
+    if not client:
+        flash(f'Sign-in with {_oauth_display_name(provider)} is not configured for this deployment.', 'error')
         return redirect(url_for('student_login'))
     session['oauth_intent'] = 'login'
-    redirect_uri = url_for('google_oauth_callback', _external=True)
-    return oauth.google.authorize_redirect(redirect_uri)
+    session['oauth_provider'] = provider
+    redirect_uri = url_for(callback_endpoint, _external=True)
+    return client.authorize_redirect(redirect_uri)
 
 
-@app.route('/auth/google/link')
-def google_oauth_link():
-    """Starts the same Google OAuth flow, but to LINK a Google account to
-    a student record rather than to log in with an existing link — see
-    README's "SSO / Institutional Login" -> "Linking Google to an
-    Account". Reachable two ways:
+def _oauth_start_link(provider, callback_endpoint):
+    """Shared body of google_oauth_link()/oidc_oauth_link(): starts the
+    same OAuth flow, but to LINK an account to a student record rather
+    than to log in with an existing link — see README's "SSO /
+    Institutional Login" -> "Linking an Account". Reachable two ways:
     - From /student/profile, while already logged in (session['student_id']).
     - Right after registration, before the student has logged in for the
       first time — student_register() stashes the newly created
@@ -3743,79 +3968,86 @@ def google_oauth_link():
       exactly this case, since registration itself doesn't establish a
       full login session.
     Either way, the target student id is captured into
-    session['oauth_link_target_id'] here so google_oauth_callback() knows
-    which account to link once Google redirects back — it never trusts
-    a student id passed directly in the URL for this.
+    session['oauth_link_target_id'] here so _oauth_finish_callback()
+    knows which account to link once the provider redirects back — it
+    never trusts a student id passed directly in the URL for this.
     """
-    if not oauth:
-        flash('Sign-in with Google is not configured for this deployment.', 'error')
+    client = _oauth_client(provider)
+    if not client:
+        flash(f'Sign-in with {_oauth_display_name(provider)} is not configured for this deployment.', 'error')
         return redirect(url_for('student_login'))
 
     target_id = session.get('student_id') or session.get('pending_oauth_link_student_id')
     if not target_id:
-        flash('Please log in (or just finish registering) before connecting a Google account.', 'error')
+        flash(f'Please log in (or just finish registering) before connecting {_oauth_display_name(provider)}.', 'error')
         return redirect(url_for('student_login'))
 
     session['oauth_intent'] = 'link'
+    session['oauth_provider'] = provider
     session['oauth_link_target_id'] = target_id
-    redirect_uri = url_for('google_oauth_callback', _external=True)
-    return oauth.google.authorize_redirect(redirect_uri)
+    redirect_uri = url_for(callback_endpoint, _external=True)
+    return client.authorize_redirect(redirect_uri)
 
 
-@app.route('/auth/google/callback')
-def google_oauth_callback():
-    """Handles the redirect back from Google for both intents started
+def _oauth_finish_callback(provider):
+    """Shared body of google_oauth_callback()/oidc_oauth_callback():
+    handles the redirect back from `provider` for both intents started
     above (session['oauth_intent'], set by whichever of the two routes
     initiated the flow — never trusted from the request itself, since
-    Google's redirect doesn't carry it back).
+    the provider's redirect doesn't carry it back).
 
-    LOGIN intent: only ever logs in an EXISTING student account, matched
-    by email — see OAUTH_GOOGLE_ENABLED's comment in config.py for why
-    this deliberately doesn't auto-create accounts. The Google account's
-    stable subject id ('sub') is linked to the student record
-    (oauth_google_sub) the first time this succeeds, purely so a later
-    profile-page email change doesn't silently re-link a different
-    student to the same Google account.
+    LOGIN intent: only ever logs in an EXISTING student account,
+    matched by email — see OAUTH_GOOGLE_ENABLED's comment in config.py
+    for why this deliberately doesn't auto-create accounts. The
+    provider's stable subject id ('sub') is linked to the student
+    record the first time this succeeds, purely so a later profile-page
+    email change doesn't silently re-link a different student to the
+    same account.
 
-    LINK intent: links the Google account to session['oauth_link_target_id']
-    specifically (set by google_oauth_link() above) rather than doing an
-    email-based lookup — the student has already proven who they are
+    LINK intent: links the account to session['oauth_link_target_id']
+    specifically (set by _oauth_start_link() above) rather than doing
+    an email-based lookup — the student has already proven who they are
     (either by being logged in, or by just having registered), so this
-    doesn't need a second identity check, only a check that this Google
+    doesn't need a second identity check, only a check that this
     account isn't already linked to a *different* student.
     """
-    if not oauth:
-        flash('Sign-in with Google is not configured for this deployment.', 'error')
+    client = _oauth_client(provider)
+    display_name = _oauth_display_name(provider)
+    sub_column = _OAUTH_PROVIDER_SUB_COLUMN[provider]
+    if not client:
+        flash(f'Sign-in with {display_name} is not configured for this deployment.', 'error')
         return redirect(url_for('student_login'))
     try:
-        token = oauth.google.authorize_access_token()
-        userinfo = token.get('userinfo') or oauth.google.userinfo()
+        token = client.authorize_access_token()
+        userinfo = token.get('userinfo') or client.userinfo()
     except Exception as e:
-        logger.warning(f'Google OAuth callback failed: {e}')
-        flash('Google sign-in failed. Please try again or use your password.', 'error')
+        logger.warning(f'{display_name} OAuth callback failed: {e}')
+        flash(f'{display_name} sign-in failed. Please try again or use your password.', 'error')
         return redirect(url_for('student_login'))
 
-    google_sub = userinfo.get('sub')
-    google_email = (userinfo.get('email') or '').strip()
-    if not google_sub or not google_email:
-        flash('Google did not return the information needed to sign you in.', 'error')
+    provider_sub = userinfo.get('sub')
+    provider_email = (userinfo.get('email') or '').strip()
+    if not provider_sub or not provider_email:
+        flash(f'{display_name} did not return the information needed to sign you in.', 'error')
         return redirect(url_for('student_login'))
 
     intent = session.pop('oauth_intent', 'login')
+    session.pop('oauth_provider', None)
 
     if intent == 'link':
         target_id = session.pop('oauth_link_target_id', None)
         session.pop('pending_oauth_link_student_id', None)
         if not target_id:
-            flash('Your registration/profile session expired before Google sign-in finished. '
-                  'Please log in and connect Google from your profile page instead.', 'error')
+            flash(f'Your registration/profile session expired before {display_name} sign-in finished. '
+                  'Please log in and connect your account from your profile page instead.', 'error')
             return redirect(url_for('student_login'))
 
         already_linked_elsewhere = query_db(
-            'SELECT id FROM students WHERE oauth_google_sub=? AND id != ?', (google_sub, target_id), one=True
+            f'SELECT id FROM students WHERE {sub_column}=? AND id != ?',  # nosec B608 -- sub_column is one of two fixed constants (_OAUTH_PROVIDER_SUB_COLUMN), never user input
+            (provider_sub, target_id), one=True
         )
         if already_linked_elsewhere:
-            flash('This Google account is already connected to a different student account.', 'error')
+            flash(f'This {display_name} account is already connected to a different student account.', 'error')
             return redirect(url_for('student_login'))
 
         target_student = query_db('SELECT * FROM students WHERE id=?', (target_id,), one=True)
@@ -3823,35 +4055,35 @@ def google_oauth_callback():
             flash('Student record not found.', 'error')
             return redirect(url_for('student_login'))
 
-        new_email = target_student['email'] or google_email
-        execute_db('UPDATE students SET oauth_google_sub=?, email=? WHERE id=?',
-                   (google_sub, new_email, target_id))
-        log_audit('student', target_student['roll_no'], 'student_oauth_linked')
+        new_email = target_student['email'] or provider_email
+        execute_db(f'UPDATE students SET {sub_column}=?, email=? WHERE id=?',  # nosec B608
+                   (provider_sub, new_email, target_id))
+        log_audit('student', target_student['roll_no'], 'student_oauth_linked', details=provider)
 
         if session.get('student_id') == target_id:
             # Already fully logged in (came from /student/profile) — just confirm.
-            flash('Google account connected to your profile.', 'success')
+            flash(f'{display_name} account connected to your profile.', 'success')
         else:
             # Came straight from registration — log them in now rather
             # than sending them back to type the password they just set.
             refreshed = query_db('SELECT * FROM students WHERE id=?', (target_id,), one=True)
             _establish_student_session(refreshed, refreshed['roll_no'], fingerprint_hash=None,
                                         login_event='student_oauth_login_success')
-            flash('Google account connected! You are now logged in.', 'success')
+            flash(f'{display_name} account connected! You are now logged in.', 'success')
         return redirect(url_for('student_login'))
 
     # LOGIN intent (default)
-    student = query_db('SELECT * FROM students WHERE oauth_google_sub=?', (google_sub,), one=True)
+    student = query_db(f'SELECT * FROM students WHERE {sub_column}=?', (provider_sub,), one=True)  # nosec B608
     if not student:
-        student = query_db('SELECT * FROM students WHERE email=? COLLATE NOCASE', (google_email,), one=True)
+        student = query_db('SELECT * FROM students WHERE email=? COLLATE NOCASE', (provider_email,), one=True)
         if student:
-            execute_db('UPDATE students SET oauth_google_sub=? WHERE id=?', (google_sub, student['id']))
+            execute_db(f'UPDATE students SET {sub_column}=? WHERE id=?', (provider_sub, student['id']))  # nosec B608
 
     if not student:
-        log_audit('anonymous', google_email, 'student_oauth_login_unmatched')
+        log_audit('anonymous', provider_email, 'student_oauth_login_unmatched', details=provider)
         flash(
-            f'No student account found for {google_email}. Please register first, or add this email to '
-            'your existing account from your profile page, then try Google sign-in again.',
+            f'No student account found for {provider_email}. Please register first, or add this email to '
+            'your existing account from your profile page, then try signing in again.',
             'error'
         )
         return redirect(url_for('student_login'))
@@ -3864,6 +4096,36 @@ def google_oauth_callback():
     _establish_student_session(student, student['roll_no'], fingerprint_hash=None, login_event='student_oauth_login_success')
     flash(f'Welcome, {student["name"]}!', 'success')
     return redirect(url_for('student_login'))
+
+
+@app.route('/auth/google/login')
+def google_oauth_login():
+    return _oauth_start('google', 'google_oauth_callback')
+
+
+@app.route('/auth/google/link')
+def google_oauth_link():
+    return _oauth_start_link('google', 'google_oauth_callback')
+
+
+@app.route('/auth/google/callback')
+def google_oauth_callback():
+    return _oauth_finish_callback('google')
+
+
+@app.route('/auth/oidc/login')
+def oidc_oauth_login():
+    return _oauth_start('oidc', 'oidc_oauth_callback')
+
+
+@app.route('/auth/oidc/link')
+def oidc_oauth_link():
+    return _oauth_start_link('oidc', 'oidc_oauth_callback')
+
+
+@app.route('/auth/oidc/callback')
+def oidc_oauth_callback():
+    return _oauth_finish_callback('oidc')
 
 
 @app.route('/student/search')
@@ -4598,6 +4860,62 @@ def export_attendance_report():
     return send_file(io.BytesIO(csv_file.getvalue().encode('utf-8')), mimetype='text/csv', as_attachment=True, download_name='attendance_report.csv')
 
 
+@app.route('/admin/analytics')
+def admin_analytics():
+    """Deeper analytics beyond the subject/date-range/semester reports
+    on /admin/reports — see analytics.py's module docstring for the
+    reasoning behind both pieces here:
+
+    - Cohort comparison: average attendance by branch, semester, and
+      subject, so an admin can see e.g. "CSE is running noticeably
+      lower than ECE this month" at a glance.
+    - Risk-trend predictions: students whose recent attendance is
+      declining, with a simple forward projection of how many more
+      sessions at that rate would put them below threshold — a
+      transparent heuristic, not a machine-learning forecast (see
+      analytics.compute_risk_predictions()'s docstring).
+    """
+    if not session.get('admin_user'):
+        return redirect(url_for('login'))
+
+    def _parse_input_date(field):
+        raw = request.args.get(field)
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, '%Y-%m-%d').date()
+        except ValueError:
+            return None
+
+    start_date = _parse_input_date('start_date')
+    end_date = _parse_input_date('end_date')
+
+    subjects = query_db('SELECT * FROM subjects ORDER BY name')
+    all_report_rows, _trend = _compute_attendance_report(start_date=start_date, end_date=end_date)
+    by_branch = analytics.aggregate_cohort(all_report_rows, 'branch')
+    by_semester = analytics.aggregate_cohort(all_report_rows, 'semester')
+    by_subject = analytics.build_subject_cohorts(subjects, _compute_attendance_report,
+                                                  start_date=start_date, end_date=end_date)
+
+    students = query_db('SELECT * FROM students ORDER BY name')
+    ordered_sessions, status_by_pair = _ordered_sessions_and_status(start_date=start_date, end_date=end_date)
+    risk_predictions = analytics.compute_risk_predictions(
+        students, ordered_sessions, status_by_pair, cfg.LATE_COUNTS_AS_PRESENT,
+        cfg.LOW_ATTENDANCE_THRESHOLD_PERCENT,
+    )
+
+    return render_template(
+        'admin_analytics.html',
+        by_branch=by_branch, by_semester=by_semester, by_subject=by_subject,
+        risk_predictions=risk_predictions, threshold=cfg.LOW_ATTENDANCE_THRESHOLD_PERCENT,
+        total_sessions_considered=len(ordered_sessions),
+        filters={
+            'start_date': request.args.get('start_date', ''),
+            'end_date': request.args.get('end_date', ''),
+        },
+    )
+
+
 @app.route('/student/register-face', methods=['GET', 'POST'])
 def student_register_face():
     """Self-service face registration for a student who already has an
@@ -4744,7 +5062,9 @@ def student_profile():
         total_sessions=total,
         percentage=percentage,
         low_attendance_threshold=cfg.LOW_ATTENDANCE_THRESHOLD_PERCENT,
-        oauth_google_enabled=bool(oauth),
+        oauth_google_enabled=bool(_oauth_client('google')),
+        oauth_oidc_enabled=bool(_oauth_client('oidc')),
+        oidc_provider_name=cfg.OAUTH_OIDC_PROVIDER_NAME,
     )
 
 

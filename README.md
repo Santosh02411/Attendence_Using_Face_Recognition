@@ -18,6 +18,10 @@ A comprehensive attendance management system powered by face recognition technol
 - [Notifications](#-notifications)
 - [Self-Service Password Reset](#-self-service-password-reset)
 - [SSO / Institutional Login](#-sso--institutional-login)
+- [Deeper Analytics](#-deeper-analytics)
+- [Biometric Integration (Scaffolding)](#-biometric-integration-scaffolding)
+- [Multi-Language Support](#-multi-language-support)
+- [Browser/E2E Tests](#-browsere2e-tests)
 - [Configuration](#-configuration)
 - [Database Schema](#-database-schema)
 - [User Interface](#-user-interface)
@@ -44,6 +48,10 @@ A comprehensive attendance management system powered by face recognition technol
 - **Notifications**: Opt-in email (SMTP) and SMS (Twilio) alerts when a student's attendance is marked and when their overall attendance drops below the low-attendance threshold — see "Notifications" below
 - **Self-Service Password Reset**: A student who has an email on file can reset their own forgotten password via an emailed, single-use, expiring link — no admin needed — see "Self-Service Password Reset" below
 - **SSO / Institutional Login**: Optional "Sign in with Google" for students, linked to an existing account by email — see "SSO / Institutional Login" below
+- **Deeper Analytics**: Cohort comparison by branch/semester/subject, plus rule-based (not ML) risk-trend predictions for declining attendance — see "Deeper Analytics" below
+- **Multi-Language Support**: Flask-Babel UI translation (English/Spanish/Hindi) with a session-based language switcher, covering the highest-traffic templates — see "Multi-Language Support" below
+- **Biometric Integration (Scaffolding)**: An interface/storage layer and admin diagnostic page for a *future* iris-authentication integration — explicitly not working biometric security today (no hardware/SDK), see "Biometric Integration (Scaffolding)" below
+- **Browser/E2E Tests**: A separate Playwright-driven test suite exercising the real HTTP/JS/camera pipeline end to end, distinct from the main mocked test suite — see "Browser/E2E Tests" below
 - **Real-time Recognition**: Live face detection and recognition during attendance sessions
 - **Bulk Student Import**: Onboard a whole class at once via CSV upload (name/roll number/branch/semester, with auto-generated temporary passwords); each student adds their own face photos afterward
 - **Export Functionality**: Export attendance records, session rosters, and attendance reports as CSV files
@@ -143,6 +151,8 @@ Attendance_Using_Face_Recognition/
 ├── logging_config.py               # Structured (JSON) logging + request-id plumbing — see "Structured Logging"
 ├── error_reporting.py              # Optional Sentry integration — see "Error Alerting"
 ├── notifications.py                 # Optional email/SMS alerts — see "Notifications"
+├── analytics.py                     # Cohort comparison + risk-trend predictions — see "Deeper Analytics"
+├── biometric.py                     # Iris-auth SCAFFOLDING (no real hardware/SDK) — see "Biometric Integration (Scaffolding)"
 ├── face_security.py                 # Active liveness challenges + anti-spoof heuristics — see "Anti-Proxy / Face Recognition Security"
 ├── wsgi.py                         # Production WSGI entrypoint (gunicorn/waitress) — see "Deployment"
 ├── gunicorn.conf.py                # Gunicorn server tuning (workers, timeouts, JSON logging)
@@ -177,6 +187,7 @@ Attendance_Using_Face_Recognition/
 │   ├── admin_dashboard.html      # Admin dashboard
 │   ├── admin_sessions.html       # Session management (+ overlap detection)
 │   ├── admin_students.html       # Student management (search, pagination, reset, delete)
+│   ├── admin_analytics.html      # Cohort comparison + risk-trend predictions — see "Deeper Analytics"
 │   ├── admin_bulk_import.html    # CSV bulk student import + results summary
 │   ├── admin_attendance.html     # Paginated all-attendance-records view
 │   ├── admin_settings.html       # Admin account management + self password change
@@ -191,7 +202,10 @@ Attendance_Using_Face_Recognition/
 │   ├── student_attend.html       # Student self-service attendance marking
 │   └── student_history.html      # Attendance history
 ├── static/                        # CSS and shared JS (styles.css, app.js)
-├── tests/                          # pytest test suite (464 tests) — see "Running Tests"
+├── translations/                  # Flask-Babel .po/.mo catalogs (en/es/hi) — see "Multi-Language Support"
+├── babel.cfg                      # Babel extraction config (Jinja templates)
+├── tests/                          # pytest test suite (518 tests) — see "Running Tests"
+├── tests_e2e/                      # Playwright browser E2E suite — see "Browser/E2E Tests"
 └── archive/                       # Superseded standalone CLI scripts, kept
     └── legacy_scripts/            # for reference only — not used by app.py
 ```
@@ -712,67 +726,238 @@ an admin's recovery email was never set.
 
 ## 🔐 SSO / Institutional Login
 
-Optional "Sign in with Google" for students, via
-[Authlib](https://docs.authlib.org/)'s OAuth 2.0 / OIDC client
-(`configure_oauth()` in `app.py`, following the same lazy-import,
+Optional "Sign in with Google" and/or a generic OpenID Connect (OIDC) provider
+for students, via [Authlib](https://docs.authlib.org/)'s OAuth 2.0 / OIDC
+client (`configure_oauth()` in `app.py`, following the same lazy-import,
 safe-no-op pattern as `error_reporting.init_sentry()` — an unconfigured
-deployment just doesn't show the button and its routes redirect back to
-the login page with a flash message, rather than erroring).
+provider just doesn't show its button, and its routes redirect back to the
+login page with a flash message rather than erroring). The two providers are
+independent — enable Google, the generic OIDC provider, both, or neither.
 
-**Deliberately does not auto-create accounts.** A Google sign-in only
-ever logs into an **existing** student account, matched by email:
+**Generic OIDC covers most institutional SSO needs** — Okta, Azure AD /
+Entra ID, Keycloak, Auth0, or any other standards-compliant OpenID Connect
+provider — without adding a heavier SAML dependency. A true SAML path is
+still not implemented (see "Future Enhancements" below); if your institution
+*only* speaks SAML rather than OIDC, this won't cover it.
 
-1. `/auth/google/login` redirects to Google's consent screen.
-2. `/auth/google/callback` receives the authorization code, exchanges it
-   for the signed-in user's email and stable Google account id (`sub`).
-3. If a student record's `oauth_google_sub` already matches, that's an
-   instant match. Otherwise, it looks for a student whose `email` column
-   (see "Notifications" above) matches, case-insensitively — and if
-   found, links `oauth_google_sub` to that account for next time.
+**Deliberately does not auto-create accounts**, for either provider. A
+sign-in only ever logs into an **existing** student account, matched by
+email:
+
+1. `/auth/google/login` or `/auth/oidc/login` redirects to that provider's
+   consent screen.
+2. `/auth/<provider>/callback` receives the authorization code, exchanges
+   it for the signed-in user's email and stable subject id (`sub`).
+3. If a student record's `oauth_google_sub`/`oauth_oidc_sub` (separate
+   columns — a student can link both providers independently) already
+   matches, that's an instant match. Otherwise, it looks for a student
+   whose `email` column (see "Notifications" above) matches,
+   case-insensitively — and if found, links that column to the account for
+   next time.
 4. No match on either → the student is told to register normally (which
    captures face-enrollment data an OAuth login can't provide) or to add
    this email to their existing account from `/student/profile` first.
 
 This keeps registration's face-capture step mandatory for every account
-while still letting an institution's Google Workspace accounts serve as
-a second, no-separate-password way to log into an *already-registered*
-account. The same account-lockout check as password login applies
-(`_is_locked_out`), and successful OAuth logins run through the same
-security-monitoring pipeline as a password login (concurrent-session,
-network-change detection, risk-based escalation — see "Security
-Monitoring" above), minus the device-fingerprint signal (there's no
-client-side JS fingerprint step in the OAuth redirect flow).
+while still letting institutional accounts serve as a second,
+no-separate-password way to log into an *already-registered* account. The
+same account-lockout check as password login applies (`_is_locked_out`),
+and successful OAuth logins run through the same security-monitoring
+pipeline as a password login (concurrent-session, network-change detection,
+risk-based escalation — see "Security Monitoring" above), minus the
+device-fingerprint signal (there's no client-side JS fingerprint step in the
+OAuth redirect flow).
 
-Configure via `OAUTH_GOOGLE_ENABLED=1`, `OAUTH_GOOGLE_CLIENT_ID`, and
-`OAUTH_GOOGLE_CLIENT_SECRET` (from a Google Cloud Console OAuth 2.0
-"Web application" client) — the authorized redirect URI to register with
-Google is `<your-deployment-url>/auth/google/callback`. Only Google is
-implemented; a SAML/generic-OIDC/institutional-LDAP path is not (see
-"Future Enhancements" below).
+Configure Google via `OAUTH_GOOGLE_ENABLED=1`, `OAUTH_GOOGLE_CLIENT_ID`, and
+`OAUTH_GOOGLE_CLIENT_SECRET` (from a Google Cloud Console OAuth 2.0 "Web
+application" client) — the authorized redirect URI to register with Google
+is `<your-deployment-url>/auth/google/callback`.
 
-### Linking Google to an Account
+Configure generic OIDC via `OAUTH_OIDC_ENABLED=1`, `OAUTH_OIDC_CLIENT_ID`,
+`OAUTH_OIDC_CLIENT_SECRET`, `OAUTH_OIDC_DISCOVERY_URL` (the provider's
+`.well-known/openid-configuration` document), and optionally
+`OAUTH_OIDC_PROVIDER_NAME` (display name shown on the "Sign in with ..."
+button and in messages — purely cosmetic) — the redirect URI to register
+with your provider is `<your-deployment-url>/auth/oidc/callback`.
 
-A student can connect a Google account to their existing record two ways:
+### Linking an Account
 
-- **From `/student/profile`** — a "Connect Google Account" button (shown
-  whenever `OAUTH_GOOGLE_ENABLED` and no `oauth_google_sub` is set yet)
-  starts the same OAuth flow via `/auth/google/link`, but with `intent`
-  set to `link` rather than `login` in the session — the callback links
-  the Google account to *this already-logged-in* student directly,
-  without needing an email match.
-- **Right after registering** — since registration itself doesn't log
-  the student in, `student_register()` stashes the new student's id in
+A student can connect Google and/or the generic OIDC provider to their
+existing record two ways, for each provider independently:
+
+- **From `/student/profile`** — a "Connect ..." button (shown whenever that
+  provider is enabled and not yet linked) starts the same OAuth flow via
+  `/auth/<provider>/link`, but with `intent` set to `link` rather than
+  `login` in the session — the callback links the account to *this
+  already-logged-in* student directly, without needing an email match.
+- **Right after registering** — since registration itself doesn't log the
+  student in, `student_register()` stashes the new student's id in
   `session['pending_oauth_link_student_id']`; the success screen on
-  `/student/register` offers a "Connect Google Account (optional)"
-  button that uses that stashed id the same way, then logs the student
-  straight in on success (skipping the "type your new password again"
-  step).
+  `/student/register` offers "Connect ..." button(s) for whichever
+  provider(s) are enabled, using that stashed id the same way, then logs
+  the student straight in on success (skipping the "type your new password
+  again" step).
 
-Either path rejects the attempt if that Google account is already
-linked to a *different* student (`students.oauth_google_sub` is
-effectively unique in practice, even though the DB index itself allows
-duplicate `NULL`s — see the index comment in
-`0009_add_notifications_and_sso.py`).
+Either path rejects the attempt if that provider account is already linked
+to a *different* student (`oauth_google_sub`/`oauth_oidc_sub` are
+effectively unique in practice, even though the DB indexes themselves allow
+duplicate `NULL`s — see the index comments in
+`0009_add_notifications_and_sso.py` and `0011_add_oidc_sso.py`).
+
+## 📈 Deeper Analytics
+
+`/admin/analytics` (linked from the Reports page, and from the main nav) builds on the same
+per-student report data as `/admin/reports` (see `_compute_attendance_report()`), adding two things
+that page doesn't cover — both implemented in `analytics.py`:
+
+### Cohort Comparison
+
+Average attendance percentage grouped three ways over the selected date range:
+
+- **By branch** and **by semester** — computed by grouping the same per-student report rows
+  `/admin/reports` already produces (`analytics.aggregate_cohort()`), so the numbers always match.
+- **By subject** — computed by calling `_compute_attendance_report(subject_id=...)` once per subject
+  and averaging (`analytics.build_subject_cohorts()`); a subject with no sessions in the selected
+  range is skipped rather than shown as a misleading 0%.
+
+### Risk-Trend Predictions
+
+Flags students whose *recent* attendance is declining, ranked most urgent first. For each student
+with at least 4 sessions of history:
+
+1. Their attendance rate over their most recent sessions ("recent") is compared against their rate
+   over everything before that ("earlier").
+2. If recent is declining relative to earlier, their overall percentage is projected forward assuming
+   the next few sessions go the same way as the last few did.
+3. They're flagged **Critical** (already below threshold and not improving), **High** (still above
+   threshold today, but the projection crosses below it), or **Medium** (a meaningful decline that
+   isn't projected to cross the threshold soon) — a **Sessions to Threshold** estimate is shown for
+   the High case. A student already below threshold but clearly *recovering* is deliberately left off
+   this list — that current-state fact is already covered by the dashboard's Low Attendance Alerts,
+   and labeling an improving student "Critical" would be misleading.
+
+**This is a transparent, rule-based extrapolation — explicitly NOT a machine-learning model.** Every
+flagged student's own recent-vs-earlier numbers are shown alongside the flag, so the reasoning is
+directly inspectable rather than a score an admin has to take on faith. A genuine ML-based forecast
+remains a separate, unimplemented item in "Future Enhancements" below.
+
+## 🧬 Biometric Integration (Scaffolding)
+
+`/admin/biometric-diagnostics` and `biometric.py` — **read this before enabling it.** This is an interface and
+storage layer for a *future* biometric integration, not a working biometric security feature today.
+
+There is no certified iris-capture hardware or vendor SDK integrated in this project. A standard webcam (the
+kind this project already uses for face recognition) cannot do iris recognition at all — that needs a
+near-infrared camera and matching optics — so nothing here tries to fake that with the existing camera pipeline,
+since doing so would mislead whoever's looking at the screen into thinking a real biometric check happened when
+it didn't.
+
+What *is* here:
+
+- `biometric.IrisProvider` — an abstract interface (`capture_template()`, `compare()`) shaped the way a real
+  vendor SDK integration would plug in.
+- `biometric.MockIrisProvider` — the one implemented provider, and explicitly **not** a biometric matcher: it
+  derives a deterministic vector from the SHA-256 hash of whatever bytes it's given, purely so the
+  enroll/store/compare code paths have something concrete to run against in tests and the admin diagnostic page.
+- `iris_templates` — a storage table (one row per student) for whatever a real provider's `capture_template()`
+  would produce.
+- `/admin/biometric-diagnostics` — an admin-only page (linked from the nav as "Biometric (Beta)") to exercise
+  that plumbing with synthetic text standing in for "raw sensor samples": compare two samples, enroll a test
+  template for a student, and compare a sample against a student's stored template.
+
+**Critically: none of this is wired into any real attendance-marking or login security decision anywhere else
+in the app**, and it must stay that way until a real provider — backed by real hardware and a real matching
+algorithm with a known false-accept rate — is implemented and independently reviewed. Treating
+`MockIrisProvider`'s output as a security signal would be actively dangerous: it always "matches" its own
+deterministic derivation of the same input, which tells you nothing about whether two samples came from the
+same eye.
+
+Off by default (`IRIS_AUTH_ENABLED=0`). The path from here to a real integration: implement a new `IrisProvider`
+subclass against an actual vendor SDK, register it in `biometric._PROVIDERS`, and — after independent security
+review — decide deliberately where (if anywhere) its result should actually gate something.
+
+## 🌐 Multi-Language Support
+
+Flask-Babel-based UI translation, with a language switcher in the top nav
+(`/set-language/<code>`, which stores the choice in the session).
+Language selection, in priority order: an explicit switcher choice for
+this session → the browser's `Accept-Language` header, matched against
+the supported set → `BABEL_DEFAULT_LOCALE` (English).
+
+**Scope is deliberately honest rather than total.** The highest-traffic,
+most load-bearing templates are fully translated: the shared navigation
+(`base.html`), the home page, both login forms, student registration, and
+the student profile page. What is **not** translated in this iteration:
+
+- JS-driven status/error messages (e.g. "Camera is ON!", registration
+  error text) — these are plain JS string literals, not Jinja-rendered,
+  so Babel's template extraction doesn't reach them.
+- The admin back-office templates (dashboard, reports, analytics, security,
+  settings, etc.) — English-only for now.
+- Flash messages generated in Python (e.g. login failures, validation
+  errors) — these use plain Python strings, not `flask_babel.gettext()`.
+
+Two languages ship as a demonstration of the framework end-to-end: Spanish
+(`es`) and Hindi (`hi`), alongside English (`en`, the default). Adding a
+new language:
+
+```bash
+pybabel init -i translations/messages.pot -d translations -l <code>
+# fill in translations/<code>/LC_MESSAGES/messages.po
+pybabel compile -d translations
+```
+
+Extending translation coverage to another template: wrap its static text in
+`{{ _('...') }}` (variables via `{{ _('Hello %(name)s', name=value) }}`),
+then re-extract and re-compile:
+
+```bash
+pybabel extract -F babel.cfg -o translations/messages.pot .
+pybabel update -i translations/messages.pot -d translations   # merges into existing .po files
+# fill in any new/blank msgstr entries
+pybabel compile -d translations
+```
+
+Configure via `BABEL_DEFAULT_LOCALE` (default `en`); the supported
+language set itself (`config.py`'s `LANGUAGES` dict) is a code-level
+decision, not an env var — see its comment for why.
+
+## 🧪 Browser/E2E Tests
+
+`tests_e2e/` holds real-browser end-to-end tests (Playwright + a live Flask
+server in a background thread) — distinct from the main `tests/` suite,
+which uses Flask's test client and mocks the camera/face-detection pipeline
+entirely. These exercise the actual HTML/JS/HTTP flow a person would drive:
+registration through a real (fake-device) camera, login, marking attendance
+against a live session, and an admin creating a session through the real
+form.
+
+Not part of the default `pytest` run (see `pytest.ini`'s `testpaths = tests`)
+since they need a browser binary and take noticeably longer:
+
+```bash
+pip install -r requirements-dev.txt
+playwright install chromium   # one-time, downloads the browser binary itself
+pytest tests_e2e/ -v
+```
+
+`tests_e2e/conftest.py`'s `live_server` fixture starts a real werkzeug
+server against an isolated temp database, with face-detection/embedding
+mocked to a **fixed, deterministic result** — Chromium's
+`--use-fake-device-for-media-stream` produces a synthetic animated test
+pattern, not a real face, and it changes slightly frame to frame, so
+without this a registration capture and a later attendance-marking capture
+could compute two different "embeddings" from two different garbage inputs
+and simply fail to match for reasons unrelated to whatever the test is
+actually exercising — the same reasoning the main suite's
+`compute_embedding` mocking uses, just applied at the server level so the
+real HTTP/JS pipeline is what's under test, not the ML model.
+
+One of the E2E tests is a regression test for a real bug found (and fixed)
+via manual browser testing during development: the student dashboard used
+to render **completely blank** after a successful login whenever there was
+no currently active session (the common case, most of the time) — see
+`loadActiveSessions()` in `templates/student_login.html`.
 
 ## 🔧 Configuration
 
@@ -899,11 +1084,23 @@ Also in `config.py` / `.env.example` — see "Notifications",
 - **Google SSO**: `OAUTH_GOOGLE_ENABLED` (default off),
   `OAUTH_GOOGLE_CLIENT_ID`, `OAUTH_GOOGLE_CLIENT_SECRET`,
   `OAUTH_GOOGLE_DISCOVERY_URL`
+- **Generic OIDC SSO**: `OAUTH_OIDC_ENABLED` (default off),
+  `OAUTH_OIDC_CLIENT_ID`, `OAUTH_OIDC_CLIENT_SECRET`,
+  `OAUTH_OIDC_DISCOVERY_URL`, `OAUTH_OIDC_PROVIDER_NAME` (default
+  `Institution SSO` — cosmetic display name only)
 - **Admin password reset**: `ADMIN_PASSWORD_RESET_ENABLED` (default
   off), `ADMIN_PASSWORD_RESET_TOKEN_TTL_MINUTES` (15),
   `RATE_LIMIT_ADMIN_PASSWORD_RESET` (`3 per hour`) — the admin's
   recovery email itself is set only via `set_admin_recovery_email.py`,
   never through config/env
+- **Multi-language UI**: `BABEL_DEFAULT_LOCALE` (default `en`) — the
+  supported language set itself is `config.py`'s `LANGUAGES` dict, a
+  code-level decision rather than an env var (see "Multi-Language
+  Support" above)
+- **Biometric scaffolding**: `IRIS_AUTH_ENABLED` (default off),
+  `IRIS_PROVIDER` (default `mock` — the only value that currently does
+  anything; see "Biometric Integration (Scaffolding)" above before
+  enabling this)
 
 ## 📊 Database Schema
 
@@ -957,6 +1154,10 @@ Also in `config.py` / `.env.example` — see "Notifications",
   `password_reset_tokens`, kept as a separate table since the two
   flows' trust models differ (see "Self-Service Password Reset" ->
   "Admin Accounts")
+- **iris_templates**: One row per student, storing whatever
+  `biometric.IrisProvider.capture_template()` produces — currently
+  always synthetic test data from the mock provider (see "Biometric
+  Integration (Scaffolding)"), never a real biometric sample
 
 ### Face Recognition Tables
 - **people**: Face profile information linked to student IDs
@@ -1113,13 +1314,18 @@ it for anything beyond a class project or internal tool):
   `python reset_admin_password.py` remains the unconditional fallback.
   Students have self-service reset on by default, but only once
   they've added an email to their account.
-- SSO covers Google only, and a login-intent match is only ever to an
-  **already-registered** student account matched by email — there's no
-  SAML/generic-OIDC support, and it can't substitute for registration's
-  face-enrollment step. Linking a Google account to an account directly
-  (from `/student/profile` or right after registering) doesn't need
-  that email match, but still can't create a new account by itself
-  (see "SSO / Institutional Login").
+- SSO covers Google and generic OIDC (Okta/Azure AD/Keycloak/Auth0/etc.),
+  and a login-intent match is only ever to an **already-registered**
+  student account matched by email — there's no true SAML support, and
+  it can't substitute for registration's face-enrollment step. Linking
+  an account directly (from `/student/profile` or right after
+  registering) doesn't need that email match, but still can't create a
+  new account by itself (see "SSO / Institutional Login").
+- Multi-language support covers the highest-traffic templates only
+  (navigation, home page, both login forms, registration, student
+  profile) in English/Spanish/Hindi — JS-driven status messages, flash
+  messages, and the admin back-office templates are English-only (see
+  "Multi-Language Support" for the exact boundary and how to extend it).
 
 ## 🚨 Troubleshooting
 
@@ -1176,7 +1382,7 @@ The application includes debug features:
 
 ## ✅ Running Tests
 
-The test suite (464 tests) covers authentication (password hashing, login
+The test suite (518 tests) covers authentication (password hashing, login
 flows, account lockout), CSRF protection, rate limiting, CAPTCHA,
 password strength policy, self-service and admin-assisted password
 changes, SQL-injection resistance, the embedding-based face recognition
@@ -1186,12 +1392,25 @@ checks, IP allowlisting, request size limits, admin account management,
 the audit log, the student profile page, bulk CSV import, session
 overlap detection, pagination, reverse-proxy IP handling, the
 attendance-marking security properties (session-derived identity, 1:1
-verification, no cross-identity leakage), and the notifications/
+verification, no cross-identity leakage), the notifications/
 password-reset/SSO additions (safe-no-op behavior when unconfigured,
 token issuance/expiry/single-use for both the student and admin reset
 flows, the email-matching/no-auto-create rule for Google login, and the
-account-linking flows from registration and from the profile page —
-see `tests/test_notifications_and_sso.py`).
+account-linking flows from registration and from the profile page, and
+the generic-OIDC provider added alongside Google —
+see `tests/test_notifications_and_sso.py`), the deeper-analytics
+additions (cohort aggregation/sorting, each risk-tier's threshold math
+verified by hand, the below-threshold-but-improving exclusion, and the
+`/admin/analytics` route itself — see `tests/test_analytics.py`),
+multi-language support (locale resolution priority, the language
+switcher, and translated-content spot checks — see
+`tests/test_i18n.py`), and the biometric-scaffolding interface (the
+mock provider's determinism/comparison math, the enroll/store/lookup
+diagnostic actions, and that every action is a no-op when disabled —
+see `tests/test_biometric.py`). A separate Playwright-driven E2E suite
+(`tests_e2e/`, not part of this count or the default `pytest` run — see
+"Browser/E2E Tests" above) covers the same core flows through a real
+browser instead of the mocked test client.
 
 Every test runs against a temporary, isolated database and Datasets
 folder — the suite never touches your real `database/` or `Datasets/`.
@@ -1655,17 +1874,16 @@ to `archive/legacy_scripts/` for reference — see `archive/README.md`.
 
 ## 🔮 Future Enhancements
 
-- [ ] Multi-language support
+- [x] ~~Multi-language support~~ — done, for the highest-traffic templates: see "Multi-Language Support" (English/Spanish/Hindi via Flask-Babel; JS-driven messages and admin back-office templates stay English-only in this iteration)
 - [ ] Mobile application
 - [ ] Cloud storage integration
-- [ ] Deeper analytics (cohort comparisons, predictive risk scoring) beyond the current subject/date-range/semester reports
+- [x] ~~Deeper analytics~~ — done: see "Deeper Analytics" (cohort comparison by branch/semester/subject, and a rule-based risk-trend prediction — not a machine-learning model, see its own section for that distinction)
 - [x] ~~SMS/email notifications~~ — done: see "Notifications" (opt-in SMTP email + Twilio SMS for attendance marks and low-attendance alerts)
-- [ ] Biometric integration (fingerprint, iris)
+- [x] ~~Biometric integration~~ — scaffolding only, iris: see "Biometric Integration (Scaffolding)" (an abstract provider interface, storage, and an admin diagnostic page — explicitly NOT working biometric security, since there's no real capture hardware/vendor SDK integrated; fingerprint is not covered)
 - [ ] AI-powered attendance predictions
-- [ ] Browser/E2E test coverage (the current suite is unit/integration level, mocking the camera pipeline)
-- [x] ~~SSO/institutional login~~ — partially done: see "SSO / Institutional Login" (Google only, login-only for an existing account, no SAML/generic-OIDC yet)
+- [x] ~~Browser/E2E test coverage~~ — done: see "Browser/E2E Tests" (a separate Playwright suite exercising the real HTTP/JS/camera pipeline through a live server, not part of the default `pytest` run)
+- [x] ~~SSO/institutional login~~ — done for Google and generic OIDC (Okta/Azure AD/Keycloak/Auth0/etc.): see "SSO / Institutional Login". Still login-only for an existing account (no OAuth-based self-registration, by design — see that section), and true SAML is still not implemented
 - [ ] A path to Postgres/concurrent-write scaling beyond the current single-SQLite-file design
-- [ ] SAML/generic-OIDC/LDAP SSO providers beyond Google, and OAuth-based self-registration (currently login-only, matched to an existing account by email)
 
 ## 🤝 Contributing
 
