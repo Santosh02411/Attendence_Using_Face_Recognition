@@ -1,0 +1,492 @@
+# Hindi translations for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-09-06 03:52+0000\n"
+"PO-Revision-Date: 2026-09-06 03:52+0000\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: hi <LL@li.org>\n"
+"Language: hi\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: templates/base.html:7
+msgid "Face Recognition Attendance"
+msgstr "चेहरा पहचान उपस्थिति"
+
+#: templates/base.html:32
+msgid "Face Attendance"
+msgstr "फेस अटेंडेंस"
+
+#: templates/base.html:37
+msgid "Admin Dashboard"
+msgstr "व्यवस्थापक डैशबोर्ड"
+
+#: templates/base.html:38
+msgid "Manage Sessions"
+msgstr "सत्र प्रबंधित करें"
+
+#: templates/base.html:39
+msgid "Manage Students"
+msgstr "छात्र प्रबंधित करें"
+
+#: templates/base.html:40
+msgid "Reports"
+msgstr "रिपोर्ट"
+
+#: templates/base.html:41
+msgid "Analytics"
+msgstr "विश्लेषण"
+
+#: templates/base.html:42
+msgid "Corrections"
+msgstr "सुधार"
+
+#: templates/base.html:43
+msgid "Recognition"
+msgstr "पहचान"
+
+#: templates/base.html:44
+msgid "Security"
+msgstr "सुरक्षा"
+
+#: templates/base.html:45 templates/student_register.html:27
+msgid "Register Student"
+msgstr "छात्र पंजीकृत करें"
+
+#: templates/base.html:46
+msgid "Settings"
+msgstr "सेटिंग्स"
+
+#: templates/base.html:47
+msgid "Audit Log"
+msgstr "ऑडिट लॉग"
+
+#: templates/base.html:48 templates/base.html:53
+msgid "Logout"
+msgstr "लॉगआउट"
+
+#: templates/base.html:50 templates/student_profile.html:10
+msgid "Attendance"
+msgstr "उपस्थिति"
+
+#: templates/base.html:51 templates/student_profile.html:4
+msgid "My Profile"
+msgstr "मेरी प्रोफ़ाइल"
+
+#: templates/base.html:52
+msgid "My History"
+msgstr "मेरा इतिहास"
+
+#: templates/base.html:55
+msgid "Home"
+msgstr "होम"
+
+#: templates/base.html:56 templates/login.html:4
+msgid "Admin Login"
+msgstr "व्यवस्थापक लॉगिन"
+
+#: templates/base.html:57 templates/login.html:27
+#: templates/student_login.html:4
+msgid "Student Login"
+msgstr "छात्र लॉगिन"
+
+#: templates/base.html:58
+msgid "Student Registration"
+msgstr "छात्र पंजीकरण"
+
+#: templates/base.html:62 templates/base.html:63
+msgid "Language"
+msgstr "भाषा"
+
+#: templates/base.html:69
+msgid "Toggle Dark Mode"
+msgstr "डार्क मोड बदलें"
+
+#: templates/index.html:5
+msgid "Attendance, verified by the person taking it"
+msgstr "उपस्थिति, जिसे लेने वाला व्यक्ति स्वयं सत्यापित करता है"
+
+#: templates/index.html:6
+msgid ""
+"Every session is signed by a live face match instead of a roll-call sheet a "
+"classmate could answer for. Sign in below to run a session, register a "
+"class, or mark yourself present."
+msgstr ""
+"हर सत्र की पुष्टि लाइव चेहरा मिलान से होती है, न कि हाज़िरी रजिस्टर से जिसे "
+"कोई सहपाठी भर सकता था। सत्र चलाने, कक्षा पंजीकृत करने, या स्वयं की उपस्थिति "
+"दर्ज करने के लिए नीचे साइन इन करें।"
+
+#: templates/index.html:17
+msgid "Admin portal"
+msgstr "व्यवस्थापक पोर्टल"
+
+#: templates/index.html:18
+msgid ""
+"Create sessions, register students, review reports, and keep an eye on the "
+"security dashboard."
+msgstr ""
+"सत्र बनाएं, छात्रों को पंजीकृत करें, रिपोर्ट देखें, और सुरक्षा डैशबोर्ड पर "
+"नज़र रखें।"
+
+#: templates/index.html:19
+msgid "Admin sign in"
+msgstr "व्यवस्थापक साइन इन"
+
+#: templates/index.html:30
+msgid "Student portal"
+msgstr "छात्र पोर्टल"
+
+#: templates/index.html:31
+msgid ""
+"Look into the camera to mark attendance for an active session, and track "
+"your record over the term."
+msgstr ""
+"किसी सक्रिय सत्र में उपस्थिति दर्ज करने के लिए कैमरे की ओर देखें, और "
+"सेमेस्टर भर अपना रिकॉर्ड देखें।"
+
+#: templates/index.html:32
+msgid "Student sign in"
+msgstr "छात्र साइन इन"
+
+#: templates/login.html:7
+msgid "Username"
+msgstr "उपयोगकर्ता नाम"
+
+#: templates/login.html:9 templates/student_login.html:8
+#: templates/student_register.html:15
+msgid "Password"
+msgstr "पासवर्ड"
+
+#: templates/login.html:12 templates/student_login.html:11
+msgid "Enter the code shown below"
+msgstr "नीचे दिखाया गया कोड दर्ज करें"
+
+#: templates/login.html:15 templates/student_login.html:14
+msgid "Refresh"
+msgstr "ताज़ा करें"
+
+#: templates/login.html:17 templates/student_login.html:16
+msgid "Enter the code above"
+msgstr "ऊपर दिया गया कोड दर्ज करें"
+
+#: templates/login.html:19
+msgid "Sign In"
+msgstr "साइन इन करें"
+
+#: templates/login.html:23 templates/student_login.html:22
+msgid "Forgot password?"
+msgstr "पासवर्ड भूल गए?"
+
+#: templates/login.html:27
+msgid "Are you a student?"
+msgstr "क्या आप छात्र हैं?"
+
+#: templates/student_login.html:6 templates/student_profile.html:27
+msgid "Roll Number"
+msgstr "रोल नंबर"
+
+#: templates/student_login.html:7
+msgid "Enter your roll number"
+msgstr "अपना रोल नंबर दर्ज करें"
+
+#: templates/student_login.html:9
+msgid "Enter your password"
+msgstr "अपना पासवर्ड दर्ज करें"
+
+#: templates/student_login.html:18
+msgid "Login"
+msgstr "लॉगिन"
+
+#: templates/student_login.html:26
+msgid "Sign in with Google"
+msgstr "Google से साइन इन करें"
+
+#: templates/student_login.html:31
+#, python-format
+msgid "Sign in with %(provider)s"
+msgstr "%(provider)s से साइन इन करें"
+
+#: templates/student_login.html:35
+msgid "Not registered?"
+msgstr "पंजीकृत नहीं हैं?"
+
+#: templates/student_login.html:35
+msgid "Register here"
+msgstr "यहां पंजीकरण करें"
+
+#: templates/student_login.html:41
+msgid "Active Attendance Sessions"
+msgstr "सक्रिय उपस्थिति सत्र"
+
+#: templates/student_login.html:43
+#, python-format
+msgid "Welcome back, %(name)s!"
+msgstr "वापसी पर स्वागत है, %(name)s!"
+
+#: templates/student_profile.html:5
+#, python-format
+msgid "Account details and attendance summary for %(name)s."
+msgstr "%(name)s के खाते का विवरण और उपस्थिति सारांश।"
+
+#: templates/student_profile.html:14
+msgid "Sessions Attended"
+msgstr "उपस्थित सत्र"
+
+#: templates/student_profile.html:18
+msgid "Registered Face Photos"
+msgstr "दर्ज चेहरे की फ़ोटो"
+
+#: templates/student_profile.html:24
+msgid "Account Details"
+msgstr "खाते का विवरण"
+
+#: templates/student_profile.html:26 templates/student_register.html:7
+msgid "Name"
+msgstr "नाम"
+
+#: templates/student_profile.html:28 templates/student_register.html:11
+#: templates/student_register.html:12
+msgid "Branch"
+msgstr "शाखा"
+
+#: templates/student_profile.html:29 templates/student_register.html:13
+#: templates/student_register.html:14
+msgid "Semester"
+msgstr "सेमेस्टर"
+
+#: templates/student_profile.html:30
+msgid "Enrollment Status"
+msgstr "नामांकन स्थिति"
+
+#: templates/student_profile.html:32
+msgid "Complete"
+msgstr "पूर्ण"
+
+#: templates/student_profile.html:32
+msgid "Pending"
+msgstr "लंबित"
+
+#: templates/student_profile.html:32
+msgid "Not Enrolled"
+msgstr "नामांकित नहीं"
+
+#: templates/student_profile.html:36
+#, python-format
+msgid "Attendance %(pct)s%%"
+msgstr "उपस्थिति %(pct)s%%"
+
+#: templates/student_profile.html:41
+#, python-format
+msgid ""
+"Your attendance is %(pct)s%%, below the %(threshold)s%% threshold. If you "
+"think this is wrong, check your attendance history — you can request a "
+"correction there."
+msgstr ""
+"आपकी उपस्थिति %(pct)s%% है, जो %(threshold)s%% सीमा से कम है। यदि आपको लगता "
+"है कि यह गलत है, तो अपना उपस्थिति इतिहास देखें — वहां आप सुधार का अनुरोध कर "
+"सकते हैं।"
+
+#: templates/student_profile.html:42
+msgid "attendance history"
+msgstr "उपस्थिति इतिहास"
+
+#: templates/student_profile.html:47
+msgid ""
+"No face photos on record — face-based attendance marking won't work until "
+"you add some."
+msgstr ""
+"कोई चेहरे की फ़ोटो दर्ज नहीं है — जब तक आप कुछ फ़ोटो नहीं जोड़ते, "
+"चेहरा-आधारित उपस्थिति दर्ज नहीं हो पाएगी।"
+
+#: templates/student_profile.html:48
+msgid "Add your face photos now"
+msgstr "अभी अपनी चेहरे की फ़ोटो जोड़ें"
+
+#: templates/student_profile.html:50
+#, python-format
+msgid "%(count)s face photo(s) on record"
+msgstr "%(count)s चेहरे की फ़ोटो दर्ज हैं"
+
+#: templates/student_profile.html:51
+#, python-format
+msgid "(average quality %(quality)s/100)"
+msgstr "(औसत गुणवत्ता %(quality)s/100)"
+
+#: templates/student_profile.html:52
+msgid "Manage my face photos"
+msgstr "मेरी चेहरे की फ़ोटो प्रबंधित करें"
+
+#: templates/student_profile.html:57
+msgid "Your face enrollment quality is low"
+msgstr "आपके चेहरे के नामांकन की गुणवत्ता कम है"
+
+#: templates/student_profile.html:57
+msgid "and you have fewer than 3 photos on file"
+msgstr "और आपकी 3 से कम फ़ोटो दर्ज हैं"
+
+#: templates/student_profile.html:58
+msgid "attendance recognition may be less reliable for you. Consider"
+msgstr "उपस्थिति पहचान आपके लिए कम विश्वसनीय हो सकती है। विचार करें"
+
+#: templates/student_profile.html:59
+msgid "adding more photos"
+msgstr "और फ़ोटो जोड़ना"
+
+#: templates/student_profile.html:60
+msgid "or doing a full"
+msgstr "या पूरी"
+
+#: templates/student_profile.html:60
+msgid ""
+"This clears all your current face photos so you can start fresh. Continue?"
+msgstr ""
+"इससे आपकी सभी मौजूदा चेहरे की फ़ोटो हट जाएंगी ताकि आप नए सिरे से शुरू कर "
+"सकें। जारी रखें?"
+
+#: templates/student_profile.html:62
+msgid "re-enrollment"
+msgstr "पुनः-नामांकन करना"
+
+#: templates/student_profile.html:66
+msgid "View Full Attendance History"
+msgstr "पूरा उपस्थिति इतिहास देखें"
+
+#: templates/student_profile.html:70
+msgid "Contact Info & Notifications"
+msgstr "संपर्क जानकारी और सूचनाएं"
+
+#: templates/student_profile.html:72
+msgid ""
+"Adding an email enables self-service password reset (if this deployment "
+"supports it) and lets you receive attendance/low-attendance notifications "
+"here, if enabled."
+msgstr ""
+"ईमेल जोड़ने से आप स्वयं पासवर्ड रीसेट कर सकते हैं (यदि यह सुविधा उपलब्ध है) "
+"और सक्षम होने पर यहां उपस्थिति/कम-उपस्थिति सूचनाएं प्राप्त कर सकते हैं।"
+
+#: templates/student_profile.html:76
+msgid "Email"
+msgstr "ईमेल"
+
+#: templates/student_profile.html:78
+msgid "Phone Number"
+msgstr "फ़ोन नंबर"
+
+#: templates/student_profile.html:82
+msgid "Email me when my attendance is marked or runs low"
+msgstr "जब मेरी उपस्थिति दर्ज हो या कम हो जाए तो मुझे ईमेल करें"
+
+#: templates/student_profile.html:86
+msgid "Text me when my attendance is marked or runs low"
+msgstr "जब मेरी उपस्थिति दर्ज हो या कम हो जाए तो मुझे SMS करें"
+
+#: templates/student_profile.html:88
+msgid "Save Contact Info"
+msgstr "संपर्क जानकारी सहेजें"
+
+#: templates/student_profile.html:93
+msgid "A Google account is connected for sign-in."
+msgstr "साइन-इन के लिए एक Google खाता जुड़ा हुआ है।"
+
+#: templates/student_profile.html:95
+msgid "Connect Google Account"
+msgstr "Google खाता जोड़ें"
+
+#: templates/student_profile.html:102
+#, python-format
+msgid "A %(provider)s account is connected for sign-in."
+msgstr "साइन-इन के लिए एक %(provider)s खाता जुड़ा हुआ है।"
+
+#: templates/student_profile.html:104
+#, python-format
+msgid "Connect %(provider)s"
+msgstr "%(provider)s जोड़ें"
+
+#: templates/student_profile.html:111
+msgid "Change My Password"
+msgstr "मेरा पासवर्ड बदलें"
+
+#: templates/student_profile.html:114
+msgid "Current Password"
+msgstr "वर्तमान पासवर्ड"
+
+#: templates/student_profile.html:116
+msgid "New Password"
+msgstr "नया पासवर्ड"
+
+#: templates/student_profile.html:118
+msgid "Confirm New Password"
+msgstr "नया पासवर्ड फिर से लिखें"
+
+#: templates/student_profile.html:120
+msgid "Update Password"
+msgstr "पासवर्ड अपडेट करें"
+
+#: templates/student_register.html:4
+msgid "Student Face Registration"
+msgstr "छात्र चेहरा पंजीकरण"
+
+#: templates/student_register.html:8
+msgid "Student Name"
+msgstr "छात्र का नाम"
+
+#: templates/student_register.html:9 templates/student_register.html:10
+msgid "Roll No"
+msgstr "रोल नंबर"
+
+#: templates/student_register.html:16
+msgid "Set your password"
+msgstr "अपना पासवर्ड सेट करें"
+
+#: templates/student_register.html:17
+msgid "Email (optional)"
+msgstr "ईमेल (वैकल्पिक)"
+
+#: templates/student_register.html:18
+msgid "For password reset & notifications"
+msgstr "पासवर्ड रीसेट और सूचनाओं के लिए"
+
+#: templates/student_register.html:19
+msgid "Phone Number (optional)"
+msgstr "फ़ोन नंबर (वैकल्पिक)"
+
+#: templates/student_register.html:20
+msgid "For SMS notifications"
+msgstr "SMS सूचनाओं के लिए"
+
+#: templates/student_register.html:21
+msgid "Gender"
+msgstr "लिंग"
+
+#: templates/student_register.html:23
+msgid "Male"
+msgstr "पुरुष"
+
+#: templates/student_register.html:24
+msgid "Female"
+msgstr "महिला"
+
+#: templates/student_register.html:25
+msgid "Other"
+msgstr "अन्य"
+
+#: templates/student_register.html:37
+msgid "Your camera preview will appear here"
+msgstr "आपका कैमरा पूर्वावलोकन यहां दिखाई देगा"
+
+#: templates/student_register.html:42
+msgid "Captured"
+msgstr "लिया गया"
+
+#: templates/student_register.html:43
+msgid "Capture Frame"
+msgstr "फ़ोटो लें"

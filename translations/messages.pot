@@ -1,0 +1,475 @@
+# Translations template for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-09-06 03:52+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: templates/base.html:7
+msgid "Face Recognition Attendance"
+msgstr ""
+
+#: templates/base.html:32
+msgid "Face Attendance"
+msgstr ""
+
+#: templates/base.html:37
+msgid "Admin Dashboard"
+msgstr ""
+
+#: templates/base.html:38
+msgid "Manage Sessions"
+msgstr ""
+
+#: templates/base.html:39
+msgid "Manage Students"
+msgstr ""
+
+#: templates/base.html:40
+msgid "Reports"
+msgstr ""
+
+#: templates/base.html:41
+msgid "Analytics"
+msgstr ""
+
+#: templates/base.html:42
+msgid "Corrections"
+msgstr ""
+
+#: templates/base.html:43
+msgid "Recognition"
+msgstr ""
+
+#: templates/base.html:44
+msgid "Security"
+msgstr ""
+
+#: templates/base.html:45 templates/student_register.html:27
+msgid "Register Student"
+msgstr ""
+
+#: templates/base.html:46
+msgid "Settings"
+msgstr ""
+
+#: templates/base.html:47
+msgid "Audit Log"
+msgstr ""
+
+#: templates/base.html:48 templates/base.html:53
+msgid "Logout"
+msgstr ""
+
+#: templates/base.html:50 templates/student_profile.html:10
+msgid "Attendance"
+msgstr ""
+
+#: templates/base.html:51 templates/student_profile.html:4
+msgid "My Profile"
+msgstr ""
+
+#: templates/base.html:52
+msgid "My History"
+msgstr ""
+
+#: templates/base.html:55
+msgid "Home"
+msgstr ""
+
+#: templates/base.html:56 templates/login.html:4
+msgid "Admin Login"
+msgstr ""
+
+#: templates/base.html:57 templates/login.html:27
+#: templates/student_login.html:4
+msgid "Student Login"
+msgstr ""
+
+#: templates/base.html:58
+msgid "Student Registration"
+msgstr ""
+
+#: templates/base.html:62 templates/base.html:63
+msgid "Language"
+msgstr ""
+
+#: templates/base.html:69
+msgid "Toggle Dark Mode"
+msgstr ""
+
+#: templates/index.html:5
+msgid "Attendance, verified by the person taking it"
+msgstr ""
+
+#: templates/index.html:6
+msgid ""
+"Every session is signed by a live face match instead of a roll-call sheet"
+" a classmate could answer for. Sign in below to run a session, register a"
+" class, or mark yourself present."
+msgstr ""
+
+#: templates/index.html:17
+msgid "Admin portal"
+msgstr ""
+
+#: templates/index.html:18
+msgid ""
+"Create sessions, register students, review reports, and keep an eye on "
+"the security dashboard."
+msgstr ""
+
+#: templates/index.html:19
+msgid "Admin sign in"
+msgstr ""
+
+#: templates/index.html:30
+msgid "Student portal"
+msgstr ""
+
+#: templates/index.html:31
+msgid ""
+"Look into the camera to mark attendance for an active session, and track "
+"your record over the term."
+msgstr ""
+
+#: templates/index.html:32
+msgid "Student sign in"
+msgstr ""
+
+#: templates/login.html:7
+msgid "Username"
+msgstr ""
+
+#: templates/login.html:9 templates/student_login.html:8
+#: templates/student_register.html:15
+msgid "Password"
+msgstr ""
+
+#: templates/login.html:12 templates/student_login.html:11
+msgid "Enter the code shown below"
+msgstr ""
+
+#: templates/login.html:15 templates/student_login.html:14
+msgid "Refresh"
+msgstr ""
+
+#: templates/login.html:17 templates/student_login.html:16
+msgid "Enter the code above"
+msgstr ""
+
+#: templates/login.html:19
+msgid "Sign In"
+msgstr ""
+
+#: templates/login.html:23 templates/student_login.html:22
+msgid "Forgot password?"
+msgstr ""
+
+#: templates/login.html:27
+msgid "Are you a student?"
+msgstr ""
+
+#: templates/student_login.html:6 templates/student_profile.html:27
+msgid "Roll Number"
+msgstr ""
+
+#: templates/student_login.html:7
+msgid "Enter your roll number"
+msgstr ""
+
+#: templates/student_login.html:9
+msgid "Enter your password"
+msgstr ""
+
+#: templates/student_login.html:18
+msgid "Login"
+msgstr ""
+
+#: templates/student_login.html:26
+msgid "Sign in with Google"
+msgstr ""
+
+#: templates/student_login.html:31
+#, python-format
+msgid "Sign in with %(provider)s"
+msgstr ""
+
+#: templates/student_login.html:35
+msgid "Not registered?"
+msgstr ""
+
+#: templates/student_login.html:35
+msgid "Register here"
+msgstr ""
+
+#: templates/student_login.html:41
+msgid "Active Attendance Sessions"
+msgstr ""
+
+#: templates/student_login.html:43
+#, python-format
+msgid "Welcome back, %(name)s!"
+msgstr ""
+
+#: templates/student_profile.html:5
+#, python-format
+msgid "Account details and attendance summary for %(name)s."
+msgstr ""
+
+#: templates/student_profile.html:14
+msgid "Sessions Attended"
+msgstr ""
+
+#: templates/student_profile.html:18
+msgid "Registered Face Photos"
+msgstr ""
+
+#: templates/student_profile.html:24
+msgid "Account Details"
+msgstr ""
+
+#: templates/student_profile.html:26 templates/student_register.html:7
+msgid "Name"
+msgstr ""
+
+#: templates/student_profile.html:28 templates/student_register.html:11
+#: templates/student_register.html:12
+msgid "Branch"
+msgstr ""
+
+#: templates/student_profile.html:29 templates/student_register.html:13
+#: templates/student_register.html:14
+msgid "Semester"
+msgstr ""
+
+#: templates/student_profile.html:30
+msgid "Enrollment Status"
+msgstr ""
+
+#: templates/student_profile.html:32
+msgid "Complete"
+msgstr ""
+
+#: templates/student_profile.html:32
+msgid "Pending"
+msgstr ""
+
+#: templates/student_profile.html:32
+msgid "Not Enrolled"
+msgstr ""
+
+#: templates/student_profile.html:36
+#, python-format
+msgid "Attendance %(pct)s%%"
+msgstr ""
+
+#: templates/student_profile.html:41
+#, python-format
+msgid ""
+"Your attendance is %(pct)s%%, below the %(threshold)s%% threshold. If you"
+" think this is wrong, check your attendance history — you can request a "
+"correction there."
+msgstr ""
+
+#: templates/student_profile.html:42
+msgid "attendance history"
+msgstr ""
+
+#: templates/student_profile.html:47
+msgid ""
+"No face photos on record — face-based attendance marking won't work until"
+" you add some."
+msgstr ""
+
+#: templates/student_profile.html:48
+msgid "Add your face photos now"
+msgstr ""
+
+#: templates/student_profile.html:50
+#, python-format
+msgid "%(count)s face photo(s) on record"
+msgstr ""
+
+#: templates/student_profile.html:51
+#, python-format
+msgid "(average quality %(quality)s/100)"
+msgstr ""
+
+#: templates/student_profile.html:52
+msgid "Manage my face photos"
+msgstr ""
+
+#: templates/student_profile.html:57
+msgid "Your face enrollment quality is low"
+msgstr ""
+
+#: templates/student_profile.html:57
+msgid "and you have fewer than 3 photos on file"
+msgstr ""
+
+#: templates/student_profile.html:58
+msgid "attendance recognition may be less reliable for you. Consider"
+msgstr ""
+
+#: templates/student_profile.html:59
+msgid "adding more photos"
+msgstr ""
+
+#: templates/student_profile.html:60
+msgid "or doing a full"
+msgstr ""
+
+#: templates/student_profile.html:60
+msgid "This clears all your current face photos so you can start fresh. Continue?"
+msgstr ""
+
+#: templates/student_profile.html:62
+msgid "re-enrollment"
+msgstr ""
+
+#: templates/student_profile.html:66
+msgid "View Full Attendance History"
+msgstr ""
+
+#: templates/student_profile.html:70
+msgid "Contact Info & Notifications"
+msgstr ""
+
+#: templates/student_profile.html:72
+msgid ""
+"Adding an email enables self-service password reset (if this deployment "
+"supports it) and lets you receive attendance/low-attendance notifications"
+" here, if enabled."
+msgstr ""
+
+#: templates/student_profile.html:76
+msgid "Email"
+msgstr ""
+
+#: templates/student_profile.html:78
+msgid "Phone Number"
+msgstr ""
+
+#: templates/student_profile.html:82
+msgid "Email me when my attendance is marked or runs low"
+msgstr ""
+
+#: templates/student_profile.html:86
+msgid "Text me when my attendance is marked or runs low"
+msgstr ""
+
+#: templates/student_profile.html:88
+msgid "Save Contact Info"
+msgstr ""
+
+#: templates/student_profile.html:93
+msgid "A Google account is connected for sign-in."
+msgstr ""
+
+#: templates/student_profile.html:95
+msgid "Connect Google Account"
+msgstr ""
+
+#: templates/student_profile.html:102
+#, python-format
+msgid "A %(provider)s account is connected for sign-in."
+msgstr ""
+
+#: templates/student_profile.html:104
+#, python-format
+msgid "Connect %(provider)s"
+msgstr ""
+
+#: templates/student_profile.html:111
+msgid "Change My Password"
+msgstr ""
+
+#: templates/student_profile.html:114
+msgid "Current Password"
+msgstr ""
+
+#: templates/student_profile.html:116
+msgid "New Password"
+msgstr ""
+
+#: templates/student_profile.html:118
+msgid "Confirm New Password"
+msgstr ""
+
+#: templates/student_profile.html:120
+msgid "Update Password"
+msgstr ""
+
+#: templates/student_register.html:4
+msgid "Student Face Registration"
+msgstr ""
+
+#: templates/student_register.html:8
+msgid "Student Name"
+msgstr ""
+
+#: templates/student_register.html:9 templates/student_register.html:10
+msgid "Roll No"
+msgstr ""
+
+#: templates/student_register.html:16
+msgid "Set your password"
+msgstr ""
+
+#: templates/student_register.html:17
+msgid "Email (optional)"
+msgstr ""
+
+#: templates/student_register.html:18
+msgid "For password reset & notifications"
+msgstr ""
+
+#: templates/student_register.html:19
+msgid "Phone Number (optional)"
+msgstr ""
+
+#: templates/student_register.html:20
+msgid "For SMS notifications"
+msgstr ""
+
+#: templates/student_register.html:21
+msgid "Gender"
+msgstr ""
+
+#: templates/student_register.html:23
+msgid "Male"
+msgstr ""
+
+#: templates/student_register.html:24
+msgid "Female"
+msgstr ""
+
+#: templates/student_register.html:25
+msgid "Other"
+msgstr ""
+
+#: templates/student_register.html:37
+msgid "Your camera preview will appear here"
+msgstr ""
+
+#: templates/student_register.html:42
+msgid "Captured"
+msgstr ""
+
+#: templates/student_register.html:43
+msgid "Capture Frame"
+msgstr ""
+
