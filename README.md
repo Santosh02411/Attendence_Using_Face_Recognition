@@ -19,6 +19,7 @@ A comprehensive attendance management system powered by face recognition technol
 - [Self-Service Password Reset](#-self-service-password-reset)
 - [SSO / Institutional Login](#-sso--institutional-login)
 - [Deeper Analytics](#-deeper-analytics)
+- [AI-Powered Attendance Predictions](#-ai-powered-attendance-predictions)
 - [Biometric Integration (Scaffolding)](#-biometric-integration-scaffolding)
 - [Multi-Language Support](#-multi-language-support)
 - [Browser/E2E Tests](#-browsere2e-tests)
@@ -51,6 +52,7 @@ A comprehensive attendance management system powered by face recognition technol
 - **Deeper Analytics**: Cohort comparison by branch/semester/subject, plus rule-based (not ML) risk-trend predictions for declining attendance — see "Deeper Analytics" below
 - **Multi-Language Support**: Flask-Babel UI translation (English/Spanish/Hindi) with a session-based language switcher, covering the highest-traffic templates — see "Multi-Language Support" below
 - **Biometric Integration (Scaffolding)**: An interface/storage layer and admin diagnostic page for a *future* iris-authentication integration — explicitly not working biometric security today (no hardware/SDK), see "Biometric Integration (Scaffolding)" below
+- **AI-Powered Attendance Predictions**: A genuinely trained logistic-regression model on this deployment's own historical data, with honestly-reported (or explicitly absent, when too small to measure) accuracy — see "AI-Powered Attendance Predictions" below
 - **Browser/E2E Tests**: A separate Playwright-driven test suite exercising the real HTTP/JS/camera pipeline end to end, distinct from the main mocked test suite — see "Browser/E2E Tests" below
 - **Real-time Recognition**: Live face detection and recognition during attendance sessions
 - **Bulk Student Import**: Onboard a whole class at once via CSV upload (name/roll number/branch/semester, with auto-generated temporary passwords); each student adds their own face photos afterward
@@ -153,6 +155,7 @@ Attendance_Using_Face_Recognition/
 ├── notifications.py                 # Optional email/SMS alerts — see "Notifications"
 ├── analytics.py                     # Cohort comparison + risk-trend predictions — see "Deeper Analytics"
 ├── biometric.py                     # Iris-auth SCAFFOLDING (no real hardware/SDK) — see "Biometric Integration (Scaffolding)"
+├── ml_predictions.py                 # Trained logistic-regression risk model — see "AI-Powered Attendance Predictions"
 ├── face_security.py                 # Active liveness challenges + anti-spoof heuristics — see "Anti-Proxy / Face Recognition Security"
 ├── wsgi.py                         # Production WSGI entrypoint (gunicorn/waitress) — see "Deployment"
 ├── gunicorn.conf.py                # Gunicorn server tuning (workers, timeouts, JSON logging)
@@ -204,7 +207,7 @@ Attendance_Using_Face_Recognition/
 ├── static/                        # CSS and shared JS (styles.css, app.js)
 ├── translations/                  # Flask-Babel .po/.mo catalogs (en/es/hi) — see "Multi-Language Support"
 ├── babel.cfg                      # Babel extraction config (Jinja templates)
-├── tests/                          # pytest test suite (518 tests) — see "Running Tests"
+├── tests/                          # pytest test suite (534 tests) — see "Running Tests"
 ├── tests_e2e/                      # Playwright browser E2E suite — see "Browser/E2E Tests"
 └── archive/                       # Superseded standalone CLI scripts, kept
     └── legacy_scripts/            # for reference only — not used by app.py
@@ -841,6 +844,42 @@ flagged student's own recent-vs-earlier numbers are shown alongside the flag, so
 directly inspectable rather than a score an admin has to take on faith. A genuine ML-based forecast
 remains a separate, unimplemented item in "Future Enhancements" below.
 
+## 🤖 AI-Powered Attendance Predictions
+
+`/admin/ml-predictions` and `ml_predictions.py` — a genuinely trained supervised learning model, distinct from
+`/admin/analytics`'s rule-based risk-trend heuristic (that page says explicitly it is *not* a machine-learning
+model; this is the separate item it points to).
+
+**What it is:** logistic regression, implemented directly with plain gradient descent (numpy — no scikit-learn
+dependency added for one small model, consistent with this project's general preference for a plain
+implementation over a heavy dependency where one suffices), trained on **this deployment's own historical
+attendance data**. There is no pre-trained model shipped with the project and no external dataset — every
+deployment trains (or doesn't) on whatever history it has actually accumulated, via a "Train Model" button.
+
+**Feature engineering avoids label leakage deliberately**: for each student, at each point in their history with
+enough sessions both before and after it, the features (overall/recent/earlier attendance rate, trend, absence
+streaks, volatility) come *only* from sessions up to that point, and the label (at-risk or not) comes from what
+actually happened over the following few sessions — never the reverse.
+
+**Read this before trusting a number on that page:**
+
+- **Cold start is real.** `MIN_TRAINING_EXAMPLES` (20) is a hard floor — training refuses outright below it
+  rather than fit a model on data too thin to mean anything, and says exactly how many examples exist and how
+  many are needed.
+- **Reported accuracy is the only evidence it works.** Training holds out 20% of examples (when there are at
+  least enough for that split to mean anything) and reports accuracy/precision/recall/F1 on that held-out
+  portion — there is no external benchmark behind this model, only that number, and small samples should be
+  read skeptically.
+- **Below the held-out threshold, metrics are `null` — not a fabricated number.** With too few examples for a
+  meaningful test split, the model still trains on everything (there's nothing better to do), but the page
+  says plainly that its accuracy is unmeasured rather than inventing a score from 2-3 test points.
+- **Nothing here is an automated decision.** No attendance record, lockout, or notification is triggered by a
+  prediction — it's a supplementary signal on an admin-only page, meant to be weighed alongside
+  `/admin/analytics`'s fully transparent, example-by-example alternative, not trusted blindly instead of it.
+
+Re-training replaces the previous model outright (`ml_model_state` is a single row) — there's no version
+history or rollback today.
+
 ## 🧬 Biometric Integration (Scaffolding)
 
 `/admin/biometric-diagnostics` and `biometric.py` — **read this before enabling it.** This is an interface and
@@ -1158,6 +1197,10 @@ Also in `config.py` / `.env.example` — see "Notifications",
   `biometric.IrisProvider.capture_template()` produces — currently
   always synthetic test data from the mock provider (see "Biometric
   Integration (Scaffolding)"), never a real biometric sample
+- **ml_model_state**: Single-row table holding the current trained
+  model (weights, feature normalization stats, and the held-out
+  accuracy/precision/recall it measured at training time) as JSON —
+  see "AI-Powered Attendance Predictions"
 
 ### Face Recognition Tables
 - **people**: Face profile information linked to student IDs
@@ -1382,7 +1425,7 @@ The application includes debug features:
 
 ## ✅ Running Tests
 
-The test suite (518 tests) covers authentication (password hashing, login
+The test suite (534 tests) covers authentication (password hashing, login
 flows, account lockout), CSRF protection, rate limiting, CAPTCHA,
 password strength policy, self-service and admin-assisted password
 changes, SQL-injection resistance, the embedding-based face recognition
@@ -1407,7 +1450,12 @@ switcher, and translated-content spot checks — see
 `tests/test_i18n.py`), and the biometric-scaffolding interface (the
 mock provider's determinism/comparison math, the enroll/store/lookup
 diagnostic actions, and that every action is a no-op when disabled —
-see `tests/test_biometric.py`). A separate Playwright-driven E2E suite
+see `tests/test_biometric.py`), and the AI-predictions pipeline (feature
+engineering never leaks future data into features, the model
+genuinely separates clearly-different synthetic attendance patterns
+with real held-out accuracy, small samples are never falsely reported
+as validated, and the train/predict routes — see
+`tests/test_ml_predictions.py`). A separate Playwright-driven E2E suite
 (`tests_e2e/`, not part of this count or the default `pytest` run — see
 "Browser/E2E Tests" above) covers the same core flows through a real
 browser instead of the mocked test client.
@@ -1880,7 +1928,7 @@ to `archive/legacy_scripts/` for reference — see `archive/README.md`.
 - [x] ~~Deeper analytics~~ — done: see "Deeper Analytics" (cohort comparison by branch/semester/subject, and a rule-based risk-trend prediction — not a machine-learning model, see its own section for that distinction)
 - [x] ~~SMS/email notifications~~ — done: see "Notifications" (opt-in SMTP email + Twilio SMS for attendance marks and low-attendance alerts)
 - [x] ~~Biometric integration~~ — scaffolding only, iris: see "Biometric Integration (Scaffolding)" (an abstract provider interface, storage, and an admin diagnostic page — explicitly NOT working biometric security, since there's no real capture hardware/vendor SDK integrated; fingerprint is not covered)
-- [ ] AI-powered attendance predictions
+- [x] ~~AI-powered attendance predictions~~ — done: see "AI-Powered Attendance Predictions" (a genuinely trained logistic-regression model on this deployment's own data — not the rule-based analytics.py heuristic — with honest cold-start behavior and held-out accuracy reporting)
 - [x] ~~Browser/E2E test coverage~~ — done: see "Browser/E2E Tests" (a separate Playwright suite exercising the real HTTP/JS/camera pipeline through a live server, not part of the default `pytest` run)
 - [x] ~~SSO/institutional login~~ — done for Google and generic OIDC (Okta/Azure AD/Keycloak/Auth0/etc.): see "SSO / Institutional Login". Still login-only for an existing account (no OAuth-based self-registration, by design — see that section), and true SAML is still not implemented
 - [ ] A path to Postgres/concurrent-write scaling beyond the current single-SQLite-file design

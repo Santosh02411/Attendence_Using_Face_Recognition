@@ -51,6 +51,7 @@ import db_migrations
 import error_reporting
 import face_security
 import logging_config
+import ml_predictions
 import notifications
 
 logging_config.configure_app_logging(level=cfg.LOG_LEVEL, fmt=cfg.LOG_FORMAT)
@@ -2745,6 +2746,105 @@ def biometric_diagnostics():
         enroll_result=enroll_result,
         lookup_result=lookup_result,
     )
+
+
+def _get_ml_model_state():
+    row = query_db('SELECT * FROM ml_model_state WHERE id=1', one=True)
+    if not row:
+        return None
+    state = ml_predictions.deserialize_model(row['model_json'])
+    state['trained_at'] = row['trained_at']
+    state['trained_by'] = row['trained_by']
+    return state
+
+
+@app.route('/admin/ml-predictions', methods=['GET'])
+def ml_predictions_view():
+    """AI-powered attendance predictions — a genuinely trained model,
+    not the rule-based risk-trend view on /admin/analytics. Read
+    ml_predictions.py's module docstring before trusting this: it is
+    trained ONLY on this deployment's own historical data, has a
+    cold-start problem by construction, and its reported accuracy (or
+    explicit lack of one, for very small samples) is the only evidence
+    that it works — never an automated decision, just a supplementary
+    signal for an admin to weigh alongside everything else.
+    """
+    if not session.get('admin_user'):
+        return redirect(url_for('login'))
+
+    model_state = _get_ml_model_state()
+    predictions = []
+    if model_state:
+        students = query_db('SELECT * FROM students ORDER BY name')
+        ordered_sessions, status_by_pair = _ordered_sessions_and_status()
+        for student in students:
+            proba = ml_predictions.predict_for_student(
+                student, ordered_sessions, status_by_pair, cfg.LATE_COUNTS_AS_PRESENT, model_state
+            )
+            if proba is not None:
+                predictions.append({
+                    'student_id': student['id'], 'name': student['name'], 'roll_no': student['roll_no'],
+                    'branch': student['branch'], 'semester': student['semester'],
+                    'risk_probability': round(proba, 3),
+                })
+        predictions.sort(key=lambda p: -p['risk_probability'])
+
+    all_sessions = query_db('SELECT id FROM sessions')
+    all_students = query_db('SELECT id FROM students')
+    return render_template(
+        'admin_ml_predictions.html',
+        model_state=model_state,
+        predictions=predictions,
+        min_training_examples=ml_predictions.MIN_TRAINING_EXAMPLES,
+        session_count=len(all_sessions),
+        student_count=len(all_students),
+    )
+
+
+@app.route('/admin/ml-predictions/train', methods=['POST'])
+def ml_predictions_train():
+    """Trains (or re-trains, replacing the previous model outright —
+    see 0013_add_ml_model_state.py) on whatever historical data this
+    deployment currently has. Refuses to train below
+    ml_predictions.MIN_TRAINING_EXAMPLES rather than fit a model on a
+    handful of examples and present it as though it means something.
+    """
+    if not session.get('admin_user'):
+        return redirect(url_for('login'))
+
+    students = query_db('SELECT * FROM students ORDER BY name')
+    ordered_sessions, status_by_pair = _ordered_sessions_and_status()
+    X, y = ml_predictions.build_training_examples(
+        students, ordered_sessions, status_by_pair, cfg.LATE_COUNTS_AS_PRESENT, cfg.LOW_ATTENDANCE_THRESHOLD_PERCENT
+    )
+
+    if len(y) < ml_predictions.MIN_TRAINING_EXAMPLES:
+        flash(
+            f'Not enough historical data to train yet: {len(y)} example(s) available, '
+            f'{ml_predictions.MIN_TRAINING_EXAMPLES} needed. This grows as more sessions and '
+            f'attendance history accumulate.', 'error'
+        )
+        return redirect(url_for('ml_predictions_view'))
+
+    model, metrics, validated = ml_predictions.train_and_evaluate(X, y)
+    trained_at = datetime.now().isoformat()
+    blob = ml_predictions.serialize_model(model, metrics, validated, len(y), trained_at=trained_at)
+
+    execute_db(
+        'INSERT INTO ml_model_state(id, model_json, trained_at, trained_by) VALUES (1, ?, ?, ?) '
+        'ON CONFLICT(id) DO UPDATE SET model_json=excluded.model_json, trained_at=excluded.trained_at, trained_by=excluded.trained_by',
+        (blob, trained_at, session.get('admin_user'))
+    )
+    log_audit('admin', session.get('admin_user'), 'ml_model_trained',
+              details=f'{len(y)} examples, validated={validated}, metrics={metrics}')
+
+    if validated:
+        flash(f'Model trained on {len(y)} examples. Held-out accuracy: {metrics["accuracy"]}, '
+              f'precision: {metrics["precision"]}, recall: {metrics["recall"]}.', 'success')
+    else:
+        flash(f'Model trained on {len(y)} examples, but too few to hold out a separate test set — '
+              f'accuracy is not independently validated. Treat predictions with extra caution.', 'warning')
+    return redirect(url_for('ml_predictions_view'))
 
 
 @app.route('/admin/recognition-settings/<key>/reset', methods=['POST'])
