@@ -216,6 +216,20 @@ table td.numeric,
   background: var(--primary-tint);
 }
 
+/* Language switcher */
+.lang-switcher {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0.4rem 0.5rem;
+  margin-left: 0.25rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+  max-width: 8.5rem;
+}
+
 /* Theme toggle */
 .theme-toggle {
   background: transparent;
