@@ -2,7 +2,7 @@
 # Windows wheel (it relies on fcntl/os.fork) — Windows deployments should
 # use waitress instead (`pip install waitress`, see README "Deploying on
 # Windows"). Linux/macOS/Docker deployments: pip install -r requirements.txt -r requirements-prod.txt
-gunicorn>=23.0
+gunicorn>=26.2.0
 
 # Optional error alerting/crash reporting (see error_reporting.py and the
 # README's "Error Alerting" section). Only listed here, not in
