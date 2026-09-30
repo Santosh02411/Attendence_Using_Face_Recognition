@@ -226,14 +226,6 @@ def main():
         print(f'Restore failed: {e}', file=sys.stderr)
         sys.exit(1)
 
-    print(f'Restored database to {summary["restored_database"]}.')
-    if summary['restored_images']:
-        print('Restored Datasets/ face images.')
-    if summary['moved_aside']:
-        print('Existing data was preserved (moved aside) at:')
-        for path in summary['moved_aside']:
-            print(f'  {path}')
-
 
 if __name__ == '__main__':
     main()
