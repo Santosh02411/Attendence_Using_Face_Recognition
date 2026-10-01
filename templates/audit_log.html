@@ -11,9 +11,6 @@
     </div>
     <p style="color: var(--muted); margin-bottom: 1.5rem;">
         Recorded actions — logins, lockouts, and admin-initiated changes
-        (deletions, overrides, account management), newest first.
-        {% if filter_type == 'security' %}Showing security-relevant events only (failed logins, lockouts, spoof/liveness-challenge failures).{% endif %}
-        {% if actor %}Filtered to actor "{{ actor }}" — <a href="{{ url_for('audit_log_view', filter=filter_type if filter_type != 'all' else None) }}">clear</a>.{% endif %}
     </p>
 
     <div class="table-container" style="overflow-x: auto;">
