@@ -9,5 +9,5 @@ gunicorn>=23.0
 # requirements.txt, so a local/dev install doesn't pull it in unasked —
 # but it's a no-op at runtime everywhere unless SENTRY_DSN is set, so
 # there's no harm installing it even if you don't end up using it.
-sentry-sdk[flask]>=2.0
+sentry-sdk[flask]>=2.70.0
 
