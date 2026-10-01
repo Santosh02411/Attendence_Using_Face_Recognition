@@ -1,38 +1,4 @@
-"""
-Automated backup for the SQLite databases and registered face images.
 
-Produces one self-contained, timestamped `.tar.gz` archive per run,
-containing:
-  - database/app.db      (via SQLite's online backup API — see below)
-  - database/FaceBase.db  (same, if present — legacy `people` table)
-  - Datasets/             (registered students' face-crop images)
-  - manifest.json         (what's inside, when, and from where)
-
-Why the SQLite online backup API instead of a plain file copy: a running
-app (gunicorn worker, or the dev server) may have app.db open and mid-write
-at the exact moment a backup runs. `shutil.copy()`'ing the raw file can
-copy it mid-transaction and produce a corrupt snapshot. `sqlite3.Connection
-.backup()` (Python's binding to SQLite's own backup API) instead reads
-through SQLite's normal locking/consistency machinery, so the copy it
-produces is always a clean, consistent snapshot — safe to run against a
-live database without stopping the app first.
-
-Usage:
-    python backup.py                    # full backup (DBs + face images) to BACKUP_DIR
-    python backup.py --skip-images      # DBs only — much faster/smaller, no Datasets/
-    python backup.py --output-dir /mnt/backups
-    python backup.py --keep 30          # override BACKUP_RETENTION_COUNT for this run
-
-Scheduling this automatically (it does nothing on its own — something
-needs to invoke it periodically):
-    # cron (host or inside the container via `docker compose exec`):
-    0 2 * * * cd /path/to/app && /path/to/venv/bin/python backup.py >> backup.log 2>&1
-
-    # systemd timer: see README "Backup & Restore" for a unit file example.
-
-See restore.py for the other half of this — extracting one of these
-archives back into place.
-"""
 import argparse
 import json
 import logging
