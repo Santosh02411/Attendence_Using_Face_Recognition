@@ -1920,19 +1920,6 @@ to `archive/legacy_scripts/` for reference — see `archive/README.md`.
 - **Database Indexing**: Automatic indexing for faster queries
 - **Caching**: Session data caching for improved performance
 
-## 🔮 Future Enhancements
-
-- [x] ~~Multi-language support~~ — done, for the highest-traffic templates: see "Multi-Language Support" (English/Spanish/Hindi via Flask-Babel; JS-driven messages and admin back-office templates stay English-only in this iteration)
-- [ ] Mobile application
-- [ ] Cloud storage integration
-- [x] ~~Deeper analytics~~ — done: see "Deeper Analytics" (cohort comparison by branch/semester/subject, and a rule-based risk-trend prediction — not a machine-learning model, see its own section for that distinction)
-- [x] ~~SMS/email notifications~~ — done: see "Notifications" (opt-in SMTP email + Twilio SMS for attendance marks and low-attendance alerts)
-- [x] ~~Biometric integration~~ — scaffolding only, iris: see "Biometric Integration (Scaffolding)" (an abstract provider interface, storage, and an admin diagnostic page — explicitly NOT working biometric security, since there's no real capture hardware/vendor SDK integrated; fingerprint is not covered)
-- [x] ~~AI-powered attendance predictions~~ — done: see "AI-Powered Attendance Predictions" (a genuinely trained logistic-regression model on this deployment's own data — not the rule-based analytics.py heuristic — with honest cold-start behavior and held-out accuracy reporting)
-- [x] ~~Browser/E2E test coverage~~ — done: see "Browser/E2E Tests" (a separate Playwright suite exercising the real HTTP/JS/camera pipeline through a live server, not part of the default `pytest` run)
-- [x] ~~SSO/institutional login~~ — done for Google and generic OIDC (Okta/Azure AD/Keycloak/Auth0/etc.): see "SSO / Institutional Login". Still login-only for an existing account (no OAuth-based self-registration, by design — see that section), and true SAML is still not implemented
-- [ ] A path to Postgres/concurrent-write scaling beyond the current single-SQLite-file design
-
 ## 🤝 Contributing
 
 1. Fork the repository
